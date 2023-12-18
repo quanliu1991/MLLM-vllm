@@ -84,7 +84,7 @@ def run_vllm(
         max_model_len=max_model_len,
         enforce_eager=enforce_eager,
     )
-
+    start = time.perf_counter()
     # Add the requests to the engine.
     for prompt, _, output_len in requests:
         sampling_params = SamplingParams(
@@ -102,7 +102,7 @@ def run_vllm(
             sampling_params=sampling_params,
         )
 
-    start = time.perf_counter()
+    # start = time.perf_counter()
     # FIXME(woosuk): Do not use internal method.
     llm._run_engine(use_tqdm=True)
     end = time.perf_counter()
@@ -217,8 +217,11 @@ def main(args: argparse.Namespace):
                                args.output_len)
     else:
         raise ValueError(f"Unknown backend: {args.backend}")
-    total_num_tokens = sum(prompt_len + output_len
+    # total_num_tokens = sum(prompt_len + output_len
+    #                        for _, prompt_len, output_len in requests)
+    total_num_tokens = sum(output_len
                            for _, prompt_len, output_len in requests)
+    print(elapsed_time)
     print(f"Throughput: {len(requests) / elapsed_time:.2f} requests/s, "
           f"{total_num_tokens / elapsed_time:.2f} tokens/s")
 
@@ -231,7 +234,7 @@ if __name__ == "__main__":
                         default="vllm")
     parser.add_argument("--dataset",
                         type=str,
-                        default=None,
+                        default="ShareGPT_V3_unfiltered_cleaned_split.json",
                         help="Path to the dataset.")
     parser.add_argument("--input-len",
                         type=int,
@@ -242,8 +245,8 @@ if __name__ == "__main__":
                         default=None,
                         help="Output length for each request. Overrides the "
                         "output length from the dataset.")
-    parser.add_argument("--model", type=str, default="facebook/opt-125m")
-    parser.add_argument("--tokenizer", type=str, default=None)
+    parser.add_argument("--model", type=str, default="/app/vllm/llm_models/llama-2-7b")
+    parser.add_argument("--tokenizer", type=str, default="/app/vllm/llm_models/llama-2-7b")
     parser.add_argument('--quantization',
                         '-q',
                         choices=['awq', 'gptq', 'squeezellm', None],
