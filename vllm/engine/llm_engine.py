@@ -135,6 +135,8 @@ class LLMEngine:
             self.model_config,
             self.parallel_config,
             self.scheduler_config,
+            self.model_config.model_runner,
+            self.model_config.cuda_graph_runner,
             0,
             distributed_init_method,
         )
@@ -149,6 +151,15 @@ class LLMEngine:
             max_concurrent_workers=self.parallel_config.
             max_parallel_loading_workers,
         )
+
+        try:
+            self._run_workers(
+                "initialize_vision_tokenizer",
+                tokenizer=self.tokenizer
+            )
+            logger.info("initialize_vision_tokenizer success.")
+        except:
+            logger.warning("undone initialize_vision_tokenizer.")
 
     def _init_workers_ray(self, placement_group: "PlacementGroup",
                           **ray_remote_kwargs):

@@ -12,7 +12,7 @@ from vllm.model_executor.parallel_utils.parallel_state import (
     initialize_model_parallel)
 from vllm.sequence import SamplerOutput, SequenceGroupMetadata
 from vllm.worker.cache_engine import CacheEngine
-from vllm.worker.model_runner import ModelRunner
+from vllm.worker.model_runner import ModelRunner, CUDAGraphRunner
 
 
 class Worker:
@@ -28,6 +28,8 @@ class Worker:
         model_config: ModelConfig,
         parallel_config: ParallelConfig,
         scheduler_config: SchedulerConfig,
+        model_runer: ModelRunner,
+        cuda_graph_runner: CUDAGraphRunner,
         rank: Optional[int] = None,
         distributed_init_method: Optional[str] = None,
     ) -> None:
@@ -37,8 +39,10 @@ class Worker:
         self.rank = rank
         self.distributed_init_method = distributed_init_method
 
-        self.model_runner = ModelRunner(model_config, parallel_config,
+        self.model_runner = model_runer(model_config, parallel_config,
                                         scheduler_config)
+        self.cuda_graph_runner = cuda_graph_runner
+
         # Uninitialized cache engine. Will be initialized by
         # self.init_cache_engine().
         self.cache_config = None
@@ -120,7 +124,7 @@ class Worker:
 
     def warm_up_model(self) -> None:
         if not self.model_config.enforce_eager:
-            self.model_runner.capture_model(self.gpu_cache)
+            self.model_runner.capture_model(self.gpu_cache, self.cuda_graph_runner)
         # Reset the seed to ensure that the random state is not affected by
         # the model initialization and profiling.
         set_random_seed(self.model_config.seed)
@@ -159,6 +163,11 @@ class Worker:
         output = self.model_runner.execute_model(seq_group_metadata_list,
                                                  self.gpu_cache)
         return output
+
+    def initialize_vision_tokenizer(self, tokenizer):
+        self.model_runner.model.initialize_vision_tokenizer(tokenizer)
+
+
 
 
 def _init_distributed_environment(

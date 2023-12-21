@@ -1,8 +1,8 @@
 import argparse
 import dataclasses
 from dataclasses import dataclass
-from typing import Optional, Tuple
-
+from typing import Optional, Tuple, Type
+from vllm.worker.model_runner import ModelRunner, CUDAGraphRunner
 from vllm.config import (CacheConfig, ModelConfig, ParallelConfig,
                          SchedulerConfig)
 
@@ -35,6 +35,9 @@ class EngineArgs:
     quantization: Optional[str] = None
     enforce_eager: bool = False
     max_context_len_to_capture: int = 8192
+    base_model_id: str = None
+    model_runner: Type[ModelRunner] = ModelRunner
+    cuda_graph_runner: Type[CUDAGraphRunner] = CUDAGraphRunner
 
     def __post_init__(self):
         if self.tokenizer is None:
@@ -219,7 +222,8 @@ class EngineArgs:
                                    self.dtype, self.seed, self.revision,
                                    self.tokenizer_revision, self.max_model_len,
                                    self.quantization, self.enforce_eager,
-                                   self.max_context_len_to_capture)
+                                   self.max_context_len_to_capture,self.base_model_id,
+                                   self.model_runner, self.cuda_graph_runner)
         cache_config = CacheConfig(self.block_size,
                                    self.gpu_memory_utilization,
                                    self.swap_space,

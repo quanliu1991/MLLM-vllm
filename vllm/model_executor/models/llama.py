@@ -246,7 +246,9 @@ class LlamaModel(nn.Module):
         positions: torch.Tensor,
         kv_caches: List[KVCache],
         input_metadata: InputMetadata,
+        inputs_embeds: torch.Tensor = None
     ) -> torch.Tensor:
+        hidden_states = inputs_embeds if inputs_embeds is not None else self.embed_tokens(input_ids)
         hidden_states = self.embed_tokens(input_ids)
         residual = None
         for i in range(len(self.layers)):

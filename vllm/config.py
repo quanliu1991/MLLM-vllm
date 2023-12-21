@@ -73,6 +73,9 @@ class ModelConfig:
         quantization: Optional[str] = None,
         enforce_eager: bool = False,
         max_context_len_to_capture: Optional[int] = None,
+        base_model_id: str = None,
+        model_runner = None,
+        cuda_graph_runner = None
     ) -> None:
         self.model = model
         self.tokenizer = tokenizer
@@ -86,6 +89,9 @@ class ModelConfig:
         self.quantization = quantization
         self.enforce_eager = enforce_eager
         self.max_context_len_to_capture = max_context_len_to_capture
+        self.base_model = base_model_id
+        self.model_runner = model_runner
+        self.cuda_graph_runner = cuda_graph_runner
 
         if os.environ.get("VLLM_USE_MODELSCOPE", "False").lower() == "true":
             # download model from ModelScope hub,

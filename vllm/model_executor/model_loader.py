@@ -5,7 +5,7 @@ from typing import Type
 import torch
 import torch.nn as nn
 from transformers import PretrainedConfig
-
+from vllm.model_executor.models.llava import LlavaLlamaForCausalLM
 from vllm.config import ModelConfig
 from vllm.model_executor.models import ModelRegistry
 from vllm.model_executor.weight_utils import (get_quant_config,
@@ -71,4 +71,13 @@ def get_model(model_config: ModelConfig) -> nn.Module:
             # Load the weights from the cached or downloaded files.
             model.load_weights(model_config.model, model_config.download_dir,
                                model_config.load_format, model_config.revision)
+    return model.eval()
+
+def get_base_model(model_config) -> nn.Module:
+    torch.set_default_dtype(model_config.dtype)
+    model= LlavaLlamaForCausalLM(model_config)
+    torch.cuda.empty_cache()
+    model.load_weights(model_config.base_model, model_config.download_dir,
+                       model_config.load_format, model_config.revision)
+    model = model.cuda()
     return model.eval()
