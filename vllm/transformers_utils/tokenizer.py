@@ -1,7 +1,8 @@
+import os
 from typing import List, Optional, Tuple, Union
 
 from transformers import (AutoTokenizer, PreTrainedTokenizer,
-                          PreTrainedTokenizerFast)
+                          PreTrainedTokenizerFast, LlamaTokenizer)
 
 from vllm.logger import init_logger
 from vllm.transformers_utils.tokenizers import *
@@ -18,6 +19,10 @@ def get_tokenizer(
     **kwargs,
 ) -> Union[PreTrainedTokenizer, PreTrainedTokenizerFast]:
     """Gets a tokenizer for the given model name via Huggingface."""
+    if os.getenv('chat_format') == 'chatml':
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=False)
+        return tokenizer
+
     if tokenizer_mode == "slow":
         if kwargs.get("use_fast", False):
             raise ValueError(
@@ -25,12 +30,15 @@ def get_tokenizer(
         kwargs["use_fast"] = False
 
     try:
-        tokenizer = AutoTokenizer.from_pretrained(
-            tokenizer_name,
-            *args,
-            trust_remote_code=trust_remote_code,
-            tokenizer_revision=tokenizer_revision,
-            **kwargs)
+        if "llama" in tokenizer_name.lower() or "llava" in tokenizer_name.lower() or "test" in tokenizer_name.lower():
+            tokenizer = LlamaTokenizer.from_pretrained(tokenizer_name, *args, **kwargs)
+        else:
+            tokenizer = AutoTokenizer.from_pretrained(
+                tokenizer_name,
+                *args,
+                trust_remote_code=trust_remote_code,
+                tokenizer_revision=tokenizer_revision,
+                **kwargs)
     except ValueError as e:
         # If the error pertains to the tokenizer class not existing or not
         # currently being imported, suggest using the --trust-remote-code flag.
