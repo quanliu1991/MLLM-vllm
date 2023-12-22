@@ -512,6 +512,8 @@ class CUDAGraphRunner:
         positions: torch.Tensor,
         kv_caches: List[Tuple[torch.Tensor, torch.Tensor]],
         input_metadata: InputMetadata,
+        image_datas: List = None,
+        cache_events: List= None,
     ) -> torch.Tensor:
         # KV caches are fixed tensors, so we don't need to copy them.
         del kv_caches
@@ -803,6 +805,7 @@ class MModelRunner(ModelRunner):
             print("self._prepare_decode(seq_group_metadata_list)")
             inputs = self._prepare_decode(seq_group_metadata_list)
             input_tokens, input_positions, input_metadata = inputs
+            image_datas = [{} for _ in range(input_tokens.shape[0])]
         sampling_metadata = self._prepare_sample(seq_group_metadata_list,
                                                  input_metadata.prompt_lens)
 
