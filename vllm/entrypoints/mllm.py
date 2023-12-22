@@ -102,14 +102,14 @@ class MLLM(LLM):
 
         assert len(prompts) == len(images), (
             f"The number of images entered should be the same as the number of text，get image number is "
-            f"{len(images)} but text number is {len(prompts)}."
-            "if image is None, please use {} placeholder。"
+            f"{len(images)} but text number is {len(prompts)}. "
+            "if image is None, please use {} placeholder."
         )
 
         assert len(prompts) == len(choices), (
             f"The number of choices entered should be the same as the number of text，get choice number is "
             f"{len(choices)} but text number is {len(prompts)}."
-            "if choice is None, please use [] placeholder。"
+            "if choice is None, please use [] placeholder."
         )
 
         if isinstance(prompts, str):
@@ -214,9 +214,9 @@ if __name__ == "__main__":
         frequency_penalty=1
     )
     images = [{"src_type": "url",
-                 "image_src": "https://img0.baidu.com/it/u=56109659,3345510515&fm=253&fmt=auto&app=138&f=JPEG?w=889&h=500"}],
-    prompts = [[{"user": "用"}]]
-    choices = [["A", "B", "C", "D"]]
+                 "image_src": "https://img0.baidu.com/it/u=56109659,3345510515&fm=253&fmt=auto&app=138&f=JPEG?w=889&h=500"} for _ in range(10)]
+    prompts = [[{"user": "你是谁"}] for _ in range(10)]
+    choices = [["A", "B", "C", "D"] for _ in range(10)]
 
     res = model.generate(
         prompts=prompts,
