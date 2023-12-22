@@ -205,27 +205,22 @@ class LlavaLlamaModel(nn.Module):
             return inputs_embeds
 
         def get_image_embed_index(input_ids, use_im_start_end):
-            #todo 兼容性更改
-            if use_im_start_end:
-                img_embed_start_indexs = [_id.item() + 1 for _id in torch.where(input_ids[0] == image_start_id)[0]]
-                img_embed_end_indexs = [_id.item() for _id in torch.where(image_end_id[0] == input_ids)[0]]
-            else:
-                img_patch_indexs = [_id.item() for _id in torch.where(input_ids[0] == image_patch_id)[0]]
-                img_embed_start_indexs = []
-                img_embed_end_indexs = []
-                for i in range(int(len(img_patch_indexs) / number_patch)):
-                    img_embed_start_indexs.append(img_patch_indexs[i * number_patch])
-                    img_embed_end_indexs.append(img_patch_indexs[(i + 1) * number_patch - 1])
+            img_embed_start_indexs = []
+            img_embed_end_indexs = []
+            for i in range(len(input_ids)):
+                if use_im_start_end:
+                    img_embed_start_indexs.append([_id.item() + 1 for _id in torch.where(input_ids == image_start_id)[0]])
+                    img_embed_end_indexs.append([_id.item() for _id in torch.where(image_end_id == input_ids)[0]])
+                else:
+                    img_patch_indexs = [_id.item() for _id in torch.where(input_ids[i] == image_patch_id)[0]]
+                    img_embed_start_indexs.append(img_patch_indexs[0])
+                    img_embed_end_indexs.append(img_patch_indexs[number_patch - 1])
             return img_embed_start_indexs, img_embed_end_indexs
 
         img_embed_start_indexs, img_embed_end_indexs = get_image_embed_index(input_ids, use_im_start_end)
-
-        def insert_image_embed(i_img):
-            inputs_embeds[0][img_embed_start_indexs[i_img]:img_embed_end_indexs[i_img] + 1, :] = \
-                batch_image_tensors[i_img][0]
-
-        for i_img in range(len(img_embed_start_indexs)):
-            insert_image_embed(i_img)
+        for i in range(input_ids.shape[0]):
+            inputs_embeds[i][img_embed_start_indexs[i]:img_embed_end_indexs[i] + 1, :] = \
+                batch_image_tensors[i][0]
 
         return inputs_embeds
 
