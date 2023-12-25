@@ -32,7 +32,7 @@ from vllm.model_executor import InputMetadata
 from vllm.model_executor.layers.sampler import Sampler
 from vllm.model_executor.models.llama import LlamaModel, KVCache
 from vllm.model_executor.parallel_utils.parallel_state import get_tensor_model_parallel_rank
-from vllm.model_executor.layers.linear import ColumnParallelLinear
+from vllm.model_executor.layers.linear import ColumnParallelLinear, LinearMethodBase
 from vllm.model_executor.layers.vocab_parallel_embedding import VocabParallelEmbedding
 from vllm.model_executor.weight_utils import (default_weight_loader,
                                               hf_model_weights_iterator)
@@ -64,7 +64,8 @@ class LlavaLlamaModel(nn.Module):
             # HACK: for FSDP
             mm_vision_tower = config.mm_vision_tower.split("/")[-1]
             clip_model = os.path.abspath(config._name_or_path) + "/" + mm_vision_tower
-            assert os.path.isdir(clip_model), f"not find {clip_model} dir. please check 'config.json' mm_vision_tower model in {config._name_or_path} "
+            assert os.path.isdir(
+                clip_model), f"not find {clip_model} dir. please check 'config.json' mm_vision_tower model in {config._name_or_path} "
             self.vision_tower = [CLIPVisionModel.from_pretrained(clip_model, torch_dtype=torch.float16).cuda()]
             self.image_processor = CLIPImageProcessor.from_pretrained(clip_model, torch_dtype=torch.float16)
             # self.image_processor = CLIPImageProcessor.from_pretrained(self.config_class.mm_vision_tower,torch_dtype=torch.float16)
@@ -155,7 +156,16 @@ class LlavaLlamaModel(nn.Module):
             inputs_embeds = self.llama_model.embed_tokens(input_ids)
 
         vision_tower = getattr(self, 'vision_tower', None)
-        if vision_tower is not None and batch_images:
+
+        def _is_have_image(batch_images):
+            if batch_images is None:
+                return False
+            for image in batch_images:
+                if len(image) != 0:
+                    return True
+            return False
+
+        if vision_tower is not None and _is_have_image(batch_images):
             # TODO: this is a modified multimodal LLM -- Haotian Liu
             vision_tower = vision_tower[0]  # HACK: for FSDP
             with torch.no_grad():
@@ -177,12 +187,13 @@ class LlavaLlamaModel(nn.Module):
                             image_features.append(image_feature)
                         batch_image_tensors.append(image_features)
                     else:
-                        image_forward_outs = vision_tower(images, output_hidden_states=True)
+                        image_forward_outs = vision_tower(image.unsqueeze(0), output_hidden_states=True)
                         select_hidden_state_layer = getattr(self.llama_model.config, "mm_vision_select_layer", -1)
                         select_hidden_state = image_forward_outs.hidden_states[select_hidden_state_layer]
                         image_features = select_hidden_state[:, 1:]
                         image_features = self.mm_projector(image_features)[0]
                         batch_image_tensors.append(image_features)
+
             # updata input embed
             inputs_embeds = self.updata_input_embed(input_ids, inputs_embeds, batch_image_tensors, vision_tower)
         else:
@@ -209,7 +220,8 @@ class LlavaLlamaModel(nn.Module):
             img_embed_end_indexs = []
             for i in range(len(input_ids)):
                 if use_im_start_end:
-                    img_embed_start_indexs.append([_id.item() + 1 for _id in torch.where(input_ids == image_start_id)[0]])
+                    img_embed_start_indexs.append(
+                        [_id.item() + 1 for _id in torch.where(input_ids == image_start_id)[0]])
                     img_embed_end_indexs.append([_id.item() for _id in torch.where(image_end_id == input_ids)[0]])
                 else:
                     img_patch_indexs = [_id.item() for _id in torch.where(input_ids[i] == image_patch_id)[0]]
@@ -247,7 +259,7 @@ class LlavaLlamaModel(nn.Module):
 class LlavaLlamaForCausalLM(nn.Module):
     config_class = LlavaConfig
 
-    def __init__(self, config):
+    def __init__(self, config, linear_method: Optional[LinearMethodBase] = None):
         super().__init__()
         if isinstance(config, ModelConfig):
             config.hf_config._name_or_path = config.base_model
@@ -260,7 +272,7 @@ class LlavaLlamaForCausalLM(nn.Module):
         self.lm_head = ColumnParallelLinear(config.hidden_size,
                                             config.vocab_size,
                                             bias=False,
-                                            gather_output=False,)
+                                            gather_output=False, )
         self.sampler = Sampler(config.vocab_size)
 
     def get_model(self):
@@ -313,9 +325,6 @@ class LlavaLlamaForCausalLM(nn.Module):
         ]
         params_dict = dict(self.named_parameters())
 
-        # tensor_model_parallel_rank = get_tensor_model_parallel_rank()
-        # state_dict = self.state_dict()
-
         for name, loaded_weight in hf_model_weights_iterator(
                 model_name_or_path, cache_dir, load_format, revision):
 
@@ -326,8 +335,10 @@ class LlavaLlamaForCausalLM(nn.Module):
                 # Models trained using ColossalAI may include these tensors in
                 # the checkpoint. Skip them.
                 continue
+            if "vision_tower" in name:
+                continue
 
-            if "mm_projector" in name or "vision_tower" in name:
+            if "mm_projector" in name:
                 pass
             else:
                 name = name.replace("model", "model.llama_model")
@@ -352,18 +363,22 @@ class LlavaLlamaForCausalLM(nn.Module):
                                         default_weight_loader)
                 weight_loader(param, loaded_weight)
 
-
-
-
-
     def load_lora_weights(self,
                           model_name_or_path: str,
                           base_state_dict: dict,
                           cache_dir: Optional[str] = None,
                           load_format: str = "auto",
                           revision: Optional[str] = None):
-        tensor_model_parallel_rank = get_tensor_model_parallel_rank()
-        state_dict = self.state_dict()
+
+        stacked_params_mapping = [
+            # (param_name, shard_name, shard_id)
+            ("qkv_proj", "q_proj", "q"),
+            ("qkv_proj", "k_proj", "k"),
+            ("qkv_proj", "v_proj", "v"),
+            ("gate_up_proj", "gate_proj", 0),
+            ("gate_up_proj", "up_proj", 1),
+        ]
+        state_dict = dict(self.named_parameters())
         self.lora_weight_dict = {}
         self.lora_weight_name = []
         with open(os.path.join(model_name_or_path, "adapter_config.json"), "r") as config_file:
@@ -374,16 +389,14 @@ class LlavaLlamaForCausalLM(nn.Module):
 
         for lora_name, loaded_weight in hf_model_weights_iterator(
                 model_name_or_path, cache_dir, load_format, revision):
-            use_lora=False
             loaded_weight = loaded_weight.to(torch.float16)
             if "mm_projector" in lora_name:
                 profix_name = lora_name.split(".mm_projector.")[0]
                 lora_name = lora_name.replace(profix_name, "model")
-                if "lora_" in  lora_name:
+                if "lora_" in lora_name:
                     self.lora_weight_dict[lora_name] = loaded_weight
                     name = re.sub(r'lora_*..', "", lora_name)
                     if self._is_lora_name_match(name):
-                        use_lora=True
                         loaded_weight = self._get_delta_weight(name)
                     else:
                         self.lora_weight_name.append(name)
@@ -414,70 +427,28 @@ class LlavaLlamaForCausalLM(nn.Module):
             else:
                 name = lora_name
 
-            is_attention_weight = False
-            for stride_id, att_weight_name in enumerate(
-                    ["q_proj", "k_proj", "v_proj"]):
-                if att_weight_name not in name:
-                    continue
-
-                param = state_dict[name.replace(att_weight_name, "qkv_proj")]
-                base_param = base_state_dict[name.replace(att_weight_name, "qkv_proj")]
-                shard_size = param.shape[0] // 3
-                loaded_weight = loaded_weight[
-                                shard_size * tensor_model_parallel_rank:shard_size *
-                                                                        (tensor_model_parallel_rank + 1)]
-                param_slice = param.data[shard_size * stride_id:shard_size *
-                                                                (stride_id + 1)]
-                base_param_slice = base_param.data[shard_size * stride_id:shard_size *
-                                                                          (stride_id + 1)]
-                assert param_slice.shape == loaded_weight.shape == base_param_slice.shape
-                param = params_dict[name]
-                weight_loader = param.weight_loader
-                weight_loader(param, loaded_weight, shard_id)
-                param_slice.copy_((base_param_slice + loaded_weight.to(base_param_slice.device)).to(param.device))
-                is_attention_weight = True
-                break
-            if is_attention_weight:
-                continue
-
-            is_gate_up_weight = False
-            for stride_id, weight_name in enumerate(["gate_proj", "up_proj"]):
+            for (param_name, weight_name, shard_id) in stacked_params_mapping:
                 if weight_name not in name:
                     continue
-                param = state_dict[name.replace(weight_name, "gate_up_proj")]
-                base_param = base_state_dict[name.replace(weight_name, "gate_up_proj")]
-                shard_size = param.shape[0] // 2
-                loaded_weight = loaded_weight[
-                                shard_size * tensor_model_parallel_rank:shard_size *
-                                                                        (tensor_model_parallel_rank + 1)]
-                param_slice = param.data[shard_size * stride_id:shard_size * (stride_id + 1)]
-                base_param_slice = base_param.data[shard_size * stride_id:shard_size * (stride_id + 1)]
-                assert param_slice.shape == loaded_weight.shape == base_param_slice.shape
-                param_slice.copy_(base_param_slice + loaded_weight.to(base_param_slice.device))
-                is_gate_up_weight = True
+                name = name.replace(weight_name, param_name)
+                # Skip loading extra bias for GPTQ models.
+                if name.endswith(".bias") and name not in state_dict:
+                    continue
+
+                base_param = base_state_dict[name]
+                param = state_dict[name]
+                weight_loader = param.weight_loader
+                weight_loader(param, loaded_weight, shard_id, base_param=base_param)
                 break
-            if is_gate_up_weight:
-                continue
-
-            if "o_proj" in name or "down_proj" in name or use_lora:
-                param = state_dict[name]
-                loaded_weight = loaded_weight + base_state_dict[name].to(loaded_weight.device)
-                weight_loader = getattr(param, "weight_loader",
-                                        default_weight_loader)
-                weight_loader(param, loaded_weight)
-            # if use_lora:
-            #     param = state_dict[name]
-            #     loaded_weight = loaded_weight + state_dict[name].to(loaded_weight.device)
             else:
+                # Skip loading extra bias for GPTQ models.
+                if name.endswith(".bias") and name not in state_dict:
+                    continue
+                base_param = base_state_dict[name]
                 param = state_dict[name]
                 weight_loader = getattr(param, "weight_loader",
                                         default_weight_loader)
-                weight_loader(param, loaded_weight)
-
-            # load_tensor_parallel_weights(param, loaded_weight, name,
-            #                              self._column_parallel_weights,
-            #                              self._row_parallel_weights,
-            #                              tensor_model_parallel_rank)
+                weight_loader(param, loaded_weight, base_param=base_param)
 
     def _is_lora_name_match(self, lora_name):
         if lora_name in self.lora_weight_name:

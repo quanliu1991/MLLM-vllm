@@ -265,9 +265,14 @@ def convert_pyslice_to_tensor(x: Any) -> torch.Tensor:
 
 
 def default_weight_loader(param: torch.Tensor,
-                          loaded_weight: torch.Tensor) -> None:
+                          loaded_weight: torch.Tensor,
+                          base_param: torch.Tensor = None
+                          ) -> None:
     """Default weight loader."""
     assert param.size() == loaded_weight.size()
+    if base_param is not None:
+        base_param_data = base_param.data
+        loaded_weight = base_param_data.to(param.data.device) + loaded_weight.to(param.data.device)
     param.data.copy_(loaded_weight)
 
 

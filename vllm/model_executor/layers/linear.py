@@ -259,7 +259,8 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
     def weight_loader(self,
                       param: Parameter,
                       loaded_weight: torch.Tensor,
-                      loaded_shard_id: Optional[int] = None):
+                      loaded_shard_id: Optional[int] = None,
+                      base_param: torch.Tensor = None):
         param_data = param.data
         output_dim = getattr(param, "output_dim", None)
         if loaded_shard_id is None:
@@ -300,7 +301,14 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
             param_data = param_data.narrow(output_dim, shard_offset,
                                            shard_size)
             start_idx = tp_rank * shard_size
-            loaded_weight = loaded_weight.narrow(output_dim, start_idx,
+            if base_param is not None:
+                base_param_data = base_param.data
+                base_param_data = base_param_data.narrow(output_dim, shard_offset,
+                                                         shard_size)
+                loaded_weight = base_param_data.to(param_data.device) + loaded_weight.narrow(output_dim, start_idx,
+                                                     shard_size).to(param_data.device)
+            else:
+                loaded_weight = loaded_weight.narrow(output_dim, start_idx,
                                                  shard_size)
         else:
             ignore_warning = getattr(param, "ignore_warning", False)
@@ -373,7 +381,8 @@ class QKVParallelLinear(ColumnParallelLinear):
     def weight_loader(self,
                       param: Parameter,
                       loaded_weight: torch.Tensor,
-                      loaded_shard_id: Optional[str] = None):
+                      loaded_shard_id: Optional[str] = None,
+                      base_param: torch.Tensor = None):
         param_data = param.data
         output_dim = getattr(param, "output_dim", None)
         if loaded_shard_id is None:
@@ -423,10 +432,18 @@ class QKVParallelLinear(ColumnParallelLinear):
                 shard_offset = shard_offset // param.pack_factor
             param_data = param_data.narrow(output_dim, shard_offset,
                                            shard_size)
+
             shard_id = tp_rank // self.num_kv_head_replicas
             start_idx = shard_id * shard_size
-            loaded_weight = loaded_weight.narrow(output_dim, start_idx,
-                                                 shard_size)
+            if base_param is not None:
+                base_param_data = base_param.data
+                base_param_data = base_param_data.narrow(output_dim, shard_offset,
+                                                         shard_size)
+                loaded_weight = base_param_data.to(param_data.device) + loaded_weight.narrow(output_dim, start_idx,
+                                                     shard_size).to(param_data.device)
+            else:
+                loaded_weight = loaded_weight.narrow(output_dim, start_idx,
+                                                                       shard_size)
         else:
             ignore_warning = getattr(param, "ignore_warning", False)
             if not ignore_warning:
@@ -516,16 +533,24 @@ class RowParallelLinear(torch.nn.Module):
         else:
             self.register_parameter("bias", None)
 
-    def weight_loader(self, param: Parameter, loaded_weight: torch.Tensor):
+    def weight_loader(self, param: Parameter, loaded_weight: torch.Tensor,base_param: torch.Tensor=None):
         tp_rank = get_tensor_model_parallel_rank()
         input_dim = getattr(param, "input_dim", None)
         param_data = param.data
         if input_dim is not None:
             shard_size = param_data.shape[input_dim]
             start_idx = tp_rank * shard_size
+            if base_param is not None:
+                base_param_data = base_param.data
+                base_param_data = base_param_data.narrow(input_dim, start_idx,
+                                                         shard_size)
             loaded_weight = loaded_weight.narrow(input_dim, start_idx,
                                                  shard_size)
         assert param_data.shape == loaded_weight.shape
+        if base_param is not None:
+            loaded_weight = base_param_data.to(param_data.device) + loaded_weight.to(
+                param_data.device)
+
         param_data.copy_(loaded_weight)
 
     def forward(self, input_):
