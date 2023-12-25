@@ -1,30 +1,23 @@
 import base64
-import re
 import os
 import time
 from io import BytesIO
 # from linker_atom.lib.load_image import mmap_to_pil
 import requests
 from PIL import Image
-# from transformers import CLIPImageProcessor
 
-from vllm import LLMEngine, SamplingParams, EngineArgs
-from typing import TYPE_CHECKING, List, Optional
+
+from vllm import LLMEngine
+from vllm.sampling_params import SamplingParams
+from typing import List, Optional
 from vllm.logger import init_logger
-from vllm.config import (CacheConfig, ModelConfig, ParallelConfig,
-                         SchedulerConfig)
-from vllm.core.scheduler import Scheduler
-from vllm.engine.ray_utils import ray, initialize_cluster, RayWorkerVllm
 from vllm.sequence import Sequence, SequenceGroup
-from vllm.transformers_utils.tokenizer import get_tokenizer
-from vllm.utils import Counter
-from vllm.worker.worker import MWorker
-from vllm.engine.conversation import Conversation, SeparatorStyle, conv_templates
+
+
+from vllm.engine.conversation import Conversation
 import torch
 from transformers import PreTrainedTokenizer
 from typing import Tuple
-if TYPE_CHECKING:
-    from ray.util.placement_group import PlacementGroup
 logger = init_logger(__name__)
 
 DEFAULT_IMAGE_TOKEN = "<image>"

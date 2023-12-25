@@ -4,7 +4,9 @@ from typing import List, Optional, Union
 
 from tqdm import tqdm
 
-from vllm import LLM, EngineArgs, RequestOutput, SamplingParams
+from vllm import LLM, EngineArgs
+from vllm.outputs import RequestOutput
+from vllm.sampling_params import SamplingParams
 from vllm.worker.model_runner import MModelRunner, CUDAMGraphRunner
 from vllm.engine.conversation import (Conversation, SeparatorStyle,
                                       conv_templates)
@@ -29,7 +31,7 @@ class MLLM(LLM):
         seed: int = 0,
         gpu_memory_utilization: float = 0.9,
         swap_space: int = 4,
-        enforce_eager: bool = False,
+        enforce_eager: bool = True,
         max_context_len_to_capture: int = 8192,
         **kwargs,
     ) -> None:
