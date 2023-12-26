@@ -2,7 +2,7 @@ import base64
 import os
 import time
 from io import BytesIO
-# from linker_atom.lib.load_image import mmap_to_pil
+from linker_atom.lib.load_image import mmap_to_pil
 import requests
 from PIL import Image
 
