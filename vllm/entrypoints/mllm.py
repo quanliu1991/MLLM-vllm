@@ -31,7 +31,7 @@ class MLLM(LLM):
         seed: int = 0,
         gpu_memory_utilization: float = 0.9,
         swap_space: int = 4,
-        enforce_eager: bool = True,
+        enforce_eager: bool = False,
         max_context_len_to_capture: int = 8192,
         **kwargs,
     ) -> None:
