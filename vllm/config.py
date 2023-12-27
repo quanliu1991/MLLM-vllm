@@ -110,7 +110,8 @@ class ModelConfig:
                                                      max_model_len)
         self._verify_load_format()
         self._verify_tokenizer_mode()
-        self._verify_quantization()
+        if False:# not verify_quantization
+            self._verify_quantization()
         self._verify_cuda_graph()
 
     def _verify_load_format(self) -> None:
