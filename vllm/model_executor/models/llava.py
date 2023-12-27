@@ -370,6 +370,14 @@ class LlavaLlamaForCausalLM(nn.Module):
                           load_format: str = "auto",
                           revision: Optional[str] = None):
 
+        if model_name_or_path is None:
+            state_dict = dict(self.named_parameters())
+            device=None
+            for name, weight in base_state_dict.items():
+                device = state_dict[name].device if device is None else device
+                state_dict[name].data.copy_(weight.to(device))
+            return
+
         stacked_params_mapping = [
             # (param_name, shard_name, shard_id)
             ("qkv_proj", "q_proj", "q"),
