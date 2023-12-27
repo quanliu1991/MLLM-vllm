@@ -1,9 +1,7 @@
 import copy
 import json
-import math
+import logging
 import os
-# os.environ["LOAD_FULL_MODEL"] = "True"
-# os.environ["chat_format"] = "chatml"
 import torch
 import time
 
@@ -22,36 +20,32 @@ class Engine:
         self.base_model = LRUCache(2)
 
     def load_model(self, model_id, resources_prefix="resources"):
-        # 临时判断是否为base model
-        load_full_model = EnvVar.LOAD_FULL_MODEL#self._is_base_model(model_id)
         self.resources_prefix = resources_prefix
         self.addapter_resources_prefix = resources_prefix
         if self.model.has(model_id):
             return self.model.get(model_id)
         else:
-            if load_full_model:
-                # tar -zcf - omchat_v1_7b_n26/ | openssl aes-256-cbc -salt -k HZlh@2023 -out omchat_v1_7b_n26.tar.gz
-                if dectypt:
+            self.model_id = model_id
+
+            if self._is_base_model(model_id):
+                self.lora_model_id = None
+                self.base_model_id = model_id
+            else:
+                self.lora_model_id = model_id
+                self.base_model_id = None
+
+            if dectypt:
+                self.base_model_dectypted = self.get_base_model_id(model_id)
+                if self.base_model_dectypted:
                     status = os.system(
-                        "openssl aes-256-cbc -d -salt -k HZlh@2023 -in resources/{}.tar.gz | tar -xz -C resources/".format(
-                            model_id))
+                        "openssl aes-256-cbc -d -salt -k HZlh@2023 -in {}/{}.tar.gz | tar -xz -C {}/".format(
+                            self.resources_prefix,
+                            self.base_model_dectypted, self.resources_prefix))
                     if status != 0:
                         raise RuntimeError("unzip failed, error code is {}. please connect engineer".format(status))
-                model = None
-                model = MLLM(
-                    model="{}/{}".format(resources_prefix, model_id),
-                    tokenizer="{}/{}".format(resources_prefix, model_id),
-                    dtype="float16",
-                    gpu_memory_utilization=EnvVar.GPU_MEMORY_UTILIZATION,
-                    max_num_batched_tokens=EnvVar.MAX_NUM_BATCHED_TOKENS,
-                    enforce_eager=True
-                )
-                self.model.put(model_id, model)
-                if dectypt:
-                    os.system("rm -rf resources/{}".format(model_id))
-            else:
-                self.model_id = model_id
-                if dectypt:
+                    else:
+                        self.base_model_id = "{}/{}".format(self.resources_prefix, self.base_model_dectypted)
+                else:
                     a = ModelProtector(xor_key=12, user_id="omchat", model_version=1)
                     encrypt_model_path = os.path.join("{}/{}".format(self.resources_prefix, model_id + '.linker'))
                     if not os.path.exists(encrypt_model_path):
@@ -63,14 +57,35 @@ class Engine:
                     except:
                         a.remove_model(out_path)
                         raise Exception("解密失败！")
-
+            if self.base_model_id:
+                base_model = self._load_base_model(self.base_model_id)
+                model = self._load_model_adapter(base_model, self.lora_model_id)
+            else:
                 base_model_id = self._get_base_model_id(model_id)
                 base_model = self._load_base_model(base_model_id)
-                model = self._load_model_adapter(base_model, model_id)
-                if dectypt:
+                model = self._load_model_adapter(base_model, self.lora_model_id)
+
+            if dectypt:
+                if self.base_model_dectypted:
+                    os.system("rm -rf {}/{}".format(self.resources_prefix, base_model_id))
+                try:
                     a.remove_model(out_path)
+                    logging.info("lora model load done!")
+                except:
+                    logging.info("base model load done!")
             return model
 
+    def _is_base_model(self, model_id):
+        adapter_config_path = os.path.join("{}/{}".format(self.addapter_resources_prefix, model_id),
+                                           "adapter_config.json")
+        if os.path.isfile(adapter_config_path):
+            return False
+        return True
+
+    def get_base_model_id(self, model_id):
+        if os.path.isfile("{}/{}.tar.gz".format(self.resources_prefix, model_id)):
+            return model_id
+        return None
 
     def _get_base_model_id(self, model_id):
         with open(os.path.join("{}/{}".format(self.addapter_resources_prefix, model_id), "adapter_config.json"),
@@ -85,8 +100,9 @@ class Engine:
     def _load_model_adapter(self, base_model, model_id):
         model = base_model[0].mllm_engine.workers[0].model_runner.model
         base_state_dict = base_model[1]
-
-        model_id_path = os.path.join("{}/{}".format(self.addapter_resources_prefix, model_id))
+        model_id_path = None
+        if model_id:
+            model_id_path = os.path.join("{}/{}".format(self.addapter_resources_prefix, model_id))
         model.load_lora_weights(model_id_path, base_state_dict)
         model.to(torch.float16)
 
@@ -96,32 +112,21 @@ class Engine:
     def _load_base_model(self, base_model_id):
         if self.base_model.has(base_model_id):
             return self.base_model.get(base_model_id)
-        else:
-            if dectypt:
-                status = os.system(
-                    "openssl aes-256-cbc -d -salt -k HZlh@2023 -in {}/{}.tar.gz | tar -xz -C {}/".format(
-                        self.resources_prefix,
-                        base_model_id, self.resources_prefix))
-                if status != 0:
-                    raise RuntimeError("unzip failed, error code is {}. please connect engineer".format(status))
-
-            base_model = MLLM(
-                model="{}/{}".format(self.resources_prefix, base_model_id),
-                tokenizer="{}/{}".format(self.resources_prefix, base_model_id),
-                gpu_memory_utilization=EnvVar.GPU_MEMORY_UTILIZATION,
-                dtype="float16",
-                lora_weight_id="{}/{}".format(self.addapter_resources_prefix, self.model_id),
-                max_num_batched_tokens=EnvVar.MAX_NUM_BATCHED_TOKENS,
-                enforce_eager=True
-            )
-            base_state_dict = {}
-            for name, para in get_model_state_dict(base_model).items():
-                base_state_dict[name] = copy.deepcopy(para).to("cpu")
-            self.base_model.put(base_model_id, (base_model, base_state_dict))
-            del base_model
-            if dectypt:
-                os.system("rm -rf {}/{}".format(self.resources_prefix, base_model_id))
-            return self.base_model.get(base_model_id)
+        base_model = MLLM(
+            model="{}/{}".format(self.resources_prefix, base_model_id),
+            tokenizer="{}/{}".format(self.resources_prefix, base_model_id),
+            gpu_memory_utilization=EnvVar.GPU_MEMORY_UTILIZATION,
+            dtype="float16",
+            lora_weight_id="{}/{}".format(self.addapter_resources_prefix, self.model_id),
+            max_num_batched_tokens=EnvVar.MAX_NUM_BATCHED_TOKENS,
+            enforce_eager=True
+        )
+        base_state_dict = {}
+        for name, para in get_model_state_dict(base_model).items():
+            base_state_dict[name] = copy.deepcopy(para).to("cpu")
+        self.base_model.put(base_model_id, (base_model, base_state_dict))
+        del base_model
+        return self.base_model.get(base_model_id)
 
     def predict(
             self,
@@ -166,7 +171,8 @@ class Engine:
     ):
         model = self.load_model(model_id)
         sampling_params = SamplingParams(
-            temperature=temperature, max_tokens=max_tokens, top_p=top_p, stop=["<|im_end|>"],presence_penalty=1,frequency_penalty=1
+            temperature=temperature, max_tokens=max_tokens, top_p=top_p, stop=["<|im_end|>"], presence_penalty=1,
+            frequency_penalty=1
         )
         images = []
         texts = []
@@ -195,7 +201,9 @@ class Engine:
             # probs={}
             # for name, logprob in output.outputs[0].logprobs:
             #     probs[name] = torch.exp_(torch.tensor(logprob,dtype=torch.float)).item()
-            generated_texts.append(Answer(content=text, input_tokens=input_tokens, output_tokens=output_tokens, mean_prob=mean_prob, probs=probs))
+            generated_texts.append(
+                Answer(content=text, input_tokens=input_tokens, output_tokens=output_tokens, mean_prob=mean_prob,
+                       probs=probs))
             print(output.prompt)
             print(generated_texts)
         return generated_texts
@@ -204,7 +212,8 @@ class Engine:
 if __name__ == "__main__":
     e = Engine()
     s_t = time.time()
-    model = e.load_model(model_id="omchat-llava-qllama-7b-chat-v1-1-finetune_qlora_zh_n67",#"lq_mcqa_0_314",#"omchat-llava-qllama-7b-chat-v1-1-qllama-finetune_zh_n97",#"omchat-llava-vicuna-7b-v1.5-v1-1-finetune_zh_n92",",#
+    model = e.load_model(model_id="omchat-llava-qllama-7b-chat-v1-1-finetune_qlora_zh_n67",
+                         # "lq_mcqa_0_314",#"omchat-llava-qllama-7b-chat-v1-1-qllama-finetune_zh_n97",#"omchat-llava-vicuna-7b-v1.5-v1-1-finetune_zh_n92",",#
                          resources_prefix="../../../llm_models"
                          )
     print(time.time() - s_t)
