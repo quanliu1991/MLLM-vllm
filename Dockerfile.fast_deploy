@@ -1,0 +1,10 @@
+registry.linker.cc/linker/omchat_0.2.6_base:0.0.0
+COPY . ./source/
+COPY . .
+RUN pip3 install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+RUN pyarmor obfuscate --src="./source" -r --output=./ wsgi.py
+RUN rm -rf source /root/pyarmor.zip /root/.pyarmor Dockerfile
+#fix Failed to import transformers.models.clip.modeling_clip error
+RUN pip3 uninstall transformer-engine -y
+CMD ["python3", "wsgi.py"]
