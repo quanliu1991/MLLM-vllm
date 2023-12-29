@@ -11,6 +11,8 @@ from vllm import MLLM, SamplingParams
 from api.config import EnvVar
 from api.schemas.response import Answer
 
+from vllm.logger import init_logger
+logger = init_logger(__name__)
 dectypt = os.getenv('IS_ENCRYPT') != 'false'
 
 
@@ -27,24 +29,11 @@ class Engine:
         else:
             self.model_id = model_id
 
-            if self._is_base_model(model_id):
-                self.lora_model_id = None
-                self.base_model_id = model_id
-            else:
-                self.lora_model_id = model_id
-                self.base_model_id = None
-
             if dectypt:
                 self.base_model_dectypted = self.get_base_model_id(model_id)
                 if self.base_model_dectypted:
-                    status = os.system(
-                        "openssl aes-256-cbc -d -salt -k HZlh@2023 -in {}/{}.tar.gz | tar -xz -C {}/".format(
-                            self.resources_prefix,
-                            self.base_model_dectypted, self.resources_prefix))
-                    if status != 0:
-                        raise RuntimeError("unzip failed, error code is {}. please connect engineer".format(status))
-                    else:
-                        self.base_model_id = "{}/{}".format(self.resources_prefix, self.base_model_dectypted)
+                        self.base_model_id = self.base_model_dectypted
+                        self.lora_model_id = None
                 else:
                     a = ModelProtector(xor_key=12, user_id="omchat", model_version=1)
                     encrypt_model_path = os.path.join("{}/{}".format(self.resources_prefix, model_id + '.linker'))
@@ -54,25 +43,30 @@ class Engine:
                     try:
                         model_path, out_path = a.decrypt_model(encrypt_model_path)
                         self.addapter_resources_prefix = out_path
+                        self.lora_model_id = model_id
+                        self.base_model_id = None
                     except:
                         a.remove_model(out_path)
                         raise Exception("解密失败！")
+            else:
+                if self._is_base_model(model_id):
+                    self.lora_model_id = None
+                    self.base_model_id = model_id
+                else:
+                    self.lora_model_id = model_id
+                    self.base_model_id = None
+
             if self.base_model_id:
                 base_model = self._load_base_model(self.base_model_id)
                 model = self._load_model_adapter(base_model, self.lora_model_id)
+                self.model.put(self.base_model_id, model)
             else:
-                base_model_id = self._get_base_model_id(model_id)
+                base_model_id = self._get_base_model_id(self.lora_model_id)
                 base_model = self._load_base_model(base_model_id)
                 model = self._load_model_adapter(base_model, self.lora_model_id)
 
-            if dectypt:
-                if self.base_model_dectypted:
-                    os.system("rm -rf {}/{}".format(self.resources_prefix, base_model_id))
-                try:
-                    a.remove_model(out_path)
-                    logging.info("lora model load done!")
-                except:
-                    logging.info("base model load done!")
+            if dectypt and self.lora_model_id is not None:
+                a.remove_model(out_path)
             return model
 
     def _is_base_model(self, model_id):
@@ -112,6 +106,13 @@ class Engine:
     def _load_base_model(self, base_model_id):
         if self.base_model.has(base_model_id):
             return self.base_model.get(base_model_id)
+        if dectypt:
+            status = os.system(
+                "openssl aes-256-cbc -d -salt -k HZlh@2023 -in {}/{}.tar.gz | tar -xz -C {}/".format(
+                    self.resources_prefix,
+                    base_model_id, self.resources_prefix))
+            if status != 0:
+                raise RuntimeError("unzip failed, error code is {}. please connect engineer".format(status))
         base_model = MLLM(
             model="{}/{}".format(self.resources_prefix, base_model_id),
             tokenizer="{}/{}".format(self.resources_prefix, base_model_id),
@@ -119,13 +120,15 @@ class Engine:
             dtype="float16",
             lora_weight_id="{}/{}".format(self.addapter_resources_prefix, self.model_id),
             max_num_batched_tokens=EnvVar.MAX_NUM_BATCHED_TOKENS,
-            enforce_eager=True
+            enforce_eager=False
         )
         base_state_dict = {}
         for name, para in get_model_state_dict(base_model).items():
             base_state_dict[name] = copy.deepcopy(para).to("cpu")
         self.base_model.put(base_model_id, (base_model, base_state_dict))
         del base_model
+        if dectypt:
+            os.system("rm -rf {}/{}".format(self.resources_prefix, base_model_id))
         return self.base_model.get(base_model_id)
 
     def predict(
@@ -169,7 +172,10 @@ class Engine:
             max_tokens=1024,
             top_p=1,
     ):
+        st=time.time()
         model = self.load_model(model_id)
+        et=time.time()
+        logger.warning("self.load_model(model_id):{}".format(et-st))
         sampling_params = SamplingParams(
             temperature=temperature, max_tokens=max_tokens, top_p=top_p, stop=["<|im_end|>"], presence_penalty=1,
             frequency_penalty=1
@@ -177,10 +183,13 @@ class Engine:
         images = []
         texts = []
         choices = []
+        st = time.time()
         for item in prompts:
             images.append({"src_type": item.src_type, "image_src": item.image} if item.image is not None else None)
             texts.append(item.dict()['records'])
             choices.append(item.dict()['choices'])
+        et = time.time()
+        logger.warning("for item in prompts:{}".format(et-st))
 
         res = model.generate(
             prompts=texts,
@@ -204,8 +213,8 @@ class Engine:
             generated_texts.append(
                 Answer(content=text, input_tokens=input_tokens, output_tokens=output_tokens, mean_prob=mean_prob,
                        probs=probs))
-            print(output.prompt)
-            print(generated_texts)
+        logger.info(texts)
+        logger.info(generated_texts)
         return generated_texts
 
 
