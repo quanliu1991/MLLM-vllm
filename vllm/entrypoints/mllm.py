@@ -1,7 +1,15 @@
 import os
+import time
+import base64
+from io import BytesIO
+from linker_atom.lib.load_image import mmap_to_pil
+import requests
+from PIL import Image
+# from joblib import Parallel, delayed, parallel_backend
+
 os.environ['chat_format'] = 'chatml'
 from typing import List, Optional, Union
-
+import asyncio
 from tqdm import tqdm
 
 from vllm import LLM, EngineArgs
@@ -14,6 +22,8 @@ from vllm.engine.mllm_engine import (DEFAULT_IM_END_TOKEN,
                                      DEFAULT_IM_START_TOKEN,
                                      DEFAULT_IMAGE_PATCH_TOKEN, MLLMEngine)
 from vllm.utils import Counter
+from vllm.logger import init_logger
+logger = init_logger(__name__)
 
 
 class MLLM(LLM):
@@ -99,6 +109,7 @@ class MLLM(LLM):
             A list of `RequestOutput` objects containing the generated
             completions in the same order as the input prompts.
         """
+        st = time.time()
         if prompts is None and prompt_token_ids is None:
             raise ValueError("Either prompts or prompt_token_ids must be " "provided.")
 
@@ -141,6 +152,11 @@ class MLLM(LLM):
         # Add requests to the engine.
         num_requests = len(prompts) if prompts is not None else len(
             prompt_token_ids)
+
+        loop=asyncio.get_event_loop()
+        image_datas = loop.run_until_complete(self.load_image(images))
+        # image_datas = asyncio.run(self.load_image(images))#self._load_image(images)
+
         for i in range(num_requests):
             if conv_template:
                 conv = conv_template.copy()
@@ -148,16 +164,67 @@ class MLLM(LLM):
                 conv = conv_templates[self.conv_mode].copy()
             prompt = prompts[i] if prompts is not None else None
             token_ids = prompt_token_ids[i] if prompt_token_ids is not None else None
-            image = images[i]
+            image = image_datas[i]
             choice = choices[i]
             self._add_request(prompt, sampling_params, token_ids, image, conv, choice)
+        et = time.time()
+        logger.warning("_add_request:{}".format(et - st))
+        st = time.time()
         result = self._run_engine(use_tqdm)
+        et = time.time()
+        logger.warning("self._run_engine(use_tqdm):{}".format(et - st))
         # stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
         # for item in result:
         #     for out in item.outputs:
         #         if out.text.endswith(stop_str):
         #             out.text = out.text[: -len(stop_str)]
         return result
+
+    def _load_one_image(self, image_src):
+        # time.sleep(5)
+        # print("_load_one_image")
+        if not image_src:
+            return None
+        image_file = image_src.get("image_src")
+        src_type = image_src.get("src_type")
+
+        if src_type == "url":
+            response = requests.get(image_file, timeout=10)
+            image = Image.open(BytesIO(response.content)).convert('RGB')
+        elif src_type == "local":
+            image = Image.open(image_file).convert('RGB')
+        elif src_type == "base64":
+            image = Image.open(BytesIO(base64.b64decode(image_file))).convert('RGB')
+        elif src_type == "mmap":
+            image = mmap_to_pil(value=image_file)
+        else:
+            assert 0, "src_type is not true"
+
+        # print("_load_one_image——doen")
+        image_tensor = \
+            self.mllm_engine.workers[0].model_runner.model.model.image_processor(image, return_tensors='pt')[
+                'pixel_values'][0]
+        # print("image_processor")
+        return image_tensor.half().cuda()
+
+    async def load_one_image(self, image_src):
+        image = await asyncio.to_thread(self._load_one_image, image_src)
+        return image
+    async def load_image(self, image_srcs):
+        # images = []
+        image_srcs = image_srcs if isinstance(image_srcs, list) else [image_srcs]
+        st = time.time()
+        # loop = asyncio.get_event_loop()
+        asyncio
+        tasks = [asyncio.create_task(self.load_one_image(image_src)) for image_src in image_srcs]
+        # loop.run_until_complete((asyncio.gather(*[self.load_one_image(image_src_i) for image_src_i in image_srcs])))
+        images = await asyncio.gather(*tasks)
+        # print(images)
+        et = time.time()
+        logger.warning("parallel_backend:{}".format(et - st))
+            # images = Parallel(n_jobs=len(image_srcs),backend="threading")(
+            #     delayed(load_one_image)(image_src_i) for image_src_i in image_srcs)
+        return images
 
 
     def _add_request(

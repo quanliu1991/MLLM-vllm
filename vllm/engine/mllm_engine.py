@@ -1,16 +1,13 @@
-import base64
+
 import os
 import time
-from io import BytesIO
-from linker_atom.lib.load_image import mmap_to_pil
-import requests
-from PIL import Image
 
 
 from vllm import LLMEngine
 from vllm.sampling_params import SamplingParams
 from typing import List, Optional
 from vllm.logger import init_logger
+logger = init_logger(__name__)
 from vllm.sequence import Sequence, SequenceGroup
 
 
@@ -18,7 +15,7 @@ from vllm.engine.conversation import Conversation
 import torch
 from transformers import PreTrainedTokenizer
 from typing import Tuple
-logger = init_logger(__name__)
+
 
 DEFAULT_IMAGE_TOKEN = "<image>"
 DEFAULT_IMAGE_PATCH_TOKEN = "<im_patch>"
@@ -78,8 +75,7 @@ class MLLMEngine(LLMEngine):
             else:
             """
             return f"{role}\n{content}", tokenizer.encode(
-                role, allowed_special=set()
-            ) + nl_tokens + tokenizer.encode(content, allowed_special=set())
+                role) + nl_tokens + tokenizer.encode(content)
 
         system_text, system_tokens_part = _tokenize_str("system", system)
         system_tokens = im_start_tokens + system_tokens_part + im_end_tokens
@@ -162,7 +158,7 @@ class MLLMEngine(LLMEngine):
         prompt, prompt_token_ids = self._get_input_prompt(choice, conv, image, image_token_len, mm_use_im_start_end,
                                                           prompt, prompt_token_ids)
 
-        image_data = self._load_image(image) if image else None
+        image_data = [image]
 
 
         # Create the sequences.
@@ -214,7 +210,7 @@ class MLLMEngine(LLMEngine):
 
     def _get_input_prompt(self, choice, conv, image, image_token_len, mm_use_im_start_end, prompt, prompt_token_ids):
         if os.getenv('chat_format') == 'chatml':
-            if image:
+            if image is not None:
                 prompt, prompt_token_ids = self.make_context(tokenizer=self.tokenizer,
                                                              query=DEFAULT_IMAGE_PATCH_TOKEN * image_token_len + "\n" +
                                                                    prompt[-1]['user'],
@@ -265,28 +261,7 @@ class MLLMEngine(LLMEngine):
             qs = f"{role}:" + DEFAULT_IMAGE_PATCH_TOKEN * image_token_len + '\n' + inp
         return qs
 
-    def _load_image(self, image_srcs):
-        images = []
-        image_srcs = image_srcs if isinstance(image_srcs, list) else [image_srcs]
-        for image_src_i in image_srcs:
-            image_file = image_src_i.get("image_src")
-            src_type = image_src_i.get("src_type")
 
-            if src_type == "url":
-                response = requests.get(image_file, timeout=10)
-                image = Image.open(BytesIO(response.content)).convert('RGB')
-            elif src_type == "local":
-                image = Image.open(image_file).convert('RGB')
-            elif src_type == "base64":
-                image = Image.open(BytesIO(base64.b64decode(image_file))).convert('RGB')
-            elif src_type == "mmap":
-                image = mmap_to_pil(value=image_file)
-            else:
-                assert 0, "src_type is not true"
-            image_tensor = self.workers[0].model_runner.model.model.image_processor(image, return_tensors='pt')['pixel_values'][0]
-            # image_tensor = self.image_processor(image, return_tensors='pt')['pixel_values'][0]
-            images.append(image_tensor.half().cuda())
-        return images
 
 
 
