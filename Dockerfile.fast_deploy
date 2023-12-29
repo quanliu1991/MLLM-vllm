@@ -1,4 +1,4 @@
-registry.linker.cc/linker/omchat_0.2.6_base:0.0.0
+FROM registry.linker.cc/linker/omchat_0.2.6_base:0.0.0
 COPY . ./source/
 COPY . .
 RUN pip3 install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple
