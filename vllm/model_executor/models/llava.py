@@ -187,7 +187,7 @@ class LlavaLlamaModel(nn.Module):
                             image_features.append(image_feature)
                         batch_image_tensors.append(image_features)
                     else:
-                        image_forward_outs = vision_tower(image.unsqueeze(0), output_hidden_states=True)
+                        image_forward_outs = vision_tower(images.unsqueeze(0), output_hidden_states=True)
                         select_hidden_state_layer = getattr(self.llama_model.config, "mm_vision_select_layer", -1)
                         select_hidden_state = image_forward_outs.hidden_states[select_hidden_state_layer]
                         image_features = select_hidden_state[:, 1:]
