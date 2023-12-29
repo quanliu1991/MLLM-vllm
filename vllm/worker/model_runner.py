@@ -802,7 +802,6 @@ class MModelRunner(ModelRunner):
             input_tokens, image_datas, input_positions, input_metadata = self._prepare_prompt(
                 seq_group_metadata_list)
         else:
-            print("self._prepare_decode(seq_group_metadata_list)")
             inputs = self._prepare_decode(seq_group_metadata_list)
             input_tokens, input_positions, input_metadata = inputs
             image_datas = [{} for _ in range(input_tokens.shape[0])]
@@ -811,7 +810,6 @@ class MModelRunner(ModelRunner):
 
         # Execute the model.
         if input_metadata.use_cuda_graph:
-            print("input_metadata.use_cuda_graph")
             graph_batch_size = input_tokens.shape[0]
             model_executable = self.graph_runners[graph_batch_size]
         else:
