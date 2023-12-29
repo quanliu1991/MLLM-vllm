@@ -10,7 +10,6 @@ from vllm.core.scheduler import Scheduler, SchedulerOutputs
 from vllm.engine.arg_utils import EngineArgs
 from vllm.engine.metrics import record_metrics
 from vllm.engine.ray_utils import RayWorkerVllm, initialize_cluster, ray
-from vllm.logger import init_logger
 from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
 from vllm.sequence import (SamplerOutput, Sequence, SequenceGroup,
@@ -26,6 +25,8 @@ if ray:
 if TYPE_CHECKING:
     from ray.util.placement_group import PlacementGroup
 
+
+from vllm.logger import init_logger
 logger = init_logger(__name__)
 
 _LOGGING_INTERVAL_SEC = 5

@@ -1,4 +1,6 @@
 import os
+os.environ.setdefault('ATOM_API_PREFIX', '/omllava')
+os.environ.setdefault('DEBUG', 'true')
 import time
 import traceback
 from api.schemas.payload import BatchQueryBody
@@ -9,14 +11,13 @@ from starlette.requests import Request
 import uvicorn
 from uvicorn.loops.auto import auto_loop_setup
 
-os.environ.setdefault('ATOM_API_PREFIX', '/omllava')
-os.environ.setdefault('DEBUG', 'true')
 from linker_atom.api.app import get_app
 from linker_atom.api.base import UdfAPIRoute
 from linker_atom.config import settings
 from linker_atom.lib.exception import VqlError
-from linker_atom.lib.log import logger
 
+from vllm.logger import init_logger
+logger = init_logger(__name__)
 
 app = get_app()
 
