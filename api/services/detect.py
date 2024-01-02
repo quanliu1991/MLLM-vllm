@@ -113,15 +113,25 @@ class Engine:
                     base_model_id, self.resources_prefix))
             if status != 0:
                 raise RuntimeError("unzip failed, error code is {}. please connect engineer".format(status))
-        base_model = MLLM(
-            model="{}/{}".format(self.resources_prefix, base_model_id),
-            tokenizer="{}/{}".format(self.resources_prefix, base_model_id),
-            gpu_memory_utilization=EnvVar.GPU_MEMORY_UTILIZATION,
-            dtype="float16",
-            lora_weight_id="{}/{}".format(self.addapter_resources_prefix, self.model_id),
-            max_num_batched_tokens=EnvVar.MAX_NUM_BATCHED_TOKENS,
-            enforce_eager=False
-        )
+        base_model = self.base_model.get_last_model()
+        if base_model:
+            model = base_model.mllm_engine.workers[0].model_runner.model
+
+            model.load_weights(model_name_or_path="{}/{}".format(self.resources_prefix, base_model_id)
+                               )
+            model.cuda()
+        else:
+            base_model = MLLM(
+                model="{}/{}".format(self.resources_prefix, base_model_id),
+                tokenizer="{}/{}".format(self.resources_prefix, base_model_id),
+                gpu_memory_utilization=EnvVar.GPU_MEMORY_UTILIZATION,
+                dtype="float16",
+                lora_weight_id="{}/{}".format(self.addapter_resources_prefix, self.model_id),
+                max_num_batched_tokens=EnvVar.MAX_NUM_BATCHED_TOKENS,
+                enforce_eager=False
+            )
+
+
         base_state_dict = {}
         for name, para in get_model_state_dict(base_model).items():
             base_state_dict[name] = copy.deepcopy(para).to("cpu")
@@ -163,7 +173,7 @@ class Engine:
         output_tokens = len(res[0].outputs[0].token_ids)
         return Answer(content=generated_text, input_tokens=input_tokens, output_tokens=output_tokens)
 
-    def batch_predict(
+    async def batch_predict(
             self,
             model_id,
             prompts,
@@ -191,7 +201,7 @@ class Engine:
         et = time.time()
         logger.warning("for item in prompts:{}".format(et-st))
 
-        res = model.generate(
+        res = await model.generate(
             prompts=texts,
             images=images,
             choices=choices,
