@@ -192,7 +192,7 @@ class LlavaLlamaModel(nn.Module):
                         select_hidden_state = image_forward_outs.hidden_states[select_hidden_state_layer]
                         image_features = select_hidden_state[:, 1:]
                         image_features = self.mm_projector(image_features)[0]
-                        batch_image_tensors.append(image_features)
+                        batch_image_tensors.append([image_features])
 
             # updata input embed
             inputs_embeds = self.updata_input_embed(input_ids, inputs_embeds, batch_image_tensors, vision_tower)

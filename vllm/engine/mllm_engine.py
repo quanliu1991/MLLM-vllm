@@ -158,7 +158,7 @@ class MLLMEngine(LLMEngine):
         prompt, prompt_token_ids = self._get_input_prompt(choice, conv, image, image_token_len, mm_use_im_start_end,
                                                           prompt, prompt_token_ids)
 
-        image_data = [image]
+        image_data = image
 
 
         # Create the sequences.
