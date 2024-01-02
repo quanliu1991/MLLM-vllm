@@ -2,8 +2,8 @@ import os
 import time
 import base64
 from io import BytesIO
+import aiohttp
 from linker_atom.lib.load_image import mmap_to_pil
-import requests
 from PIL import Image
 # from joblib import Parallel, delayed, parallel_backend
 
@@ -78,7 +78,7 @@ class MLLM(LLM):
         elif "n24" in model.lower(): self.conv_mode = "zh"
         else: self.conv_mode = "llava_v1"
 
-    def generate(
+    async def generate(
         self,
         prompts: Optional[Union[str, List[str]]] = None,
         images: Optional[Union[dict, List[dict]]] = None,
@@ -153,9 +153,7 @@ class MLLM(LLM):
         num_requests = len(prompts) if prompts is not None else len(
             prompt_token_ids)
 
-        loop=asyncio.get_event_loop()
-        image_datas = loop.run_until_complete(self.load_image(images))
-        # image_datas = asyncio.run(self.load_image(images))#self._load_image(images)
+        image_datas = await self.load_image(images)
 
         for i in range(num_requests):
             if conv_template:
@@ -180,7 +178,7 @@ class MLLM(LLM):
         #             out.text = out.text[: -len(stop_str)]
         return result
 
-    def _load_one_image(self, image_src):
+    async def _load_one_image(self, image_src):
         # time.sleep(5)
         # print("_load_one_image")
         if not image_src:
@@ -189,8 +187,12 @@ class MLLM(LLM):
         src_type = image_src.get("src_type")
 
         if src_type == "url":
-            response = requests.get(image_file, timeout=10)
-            image = Image.open(BytesIO(response.content)).convert('RGB')
+            async with aiohttp.ClientSession() as session:
+                async with session.get(image_file, timeout=30) as response:
+                    image_file = await response.read()
+            image = Image.open(BytesIO(image_file)).convert('RGB')
+            # response = await requests.get(image_file, timeout=10)
+            # image = Image.open(BytesIO(response_f)).convert('RGB')
         elif src_type == "local":
             image = Image.open(image_file).convert('RGB')
         elif src_type == "base64":
@@ -207,16 +209,13 @@ class MLLM(LLM):
         # print("image_processor")
         return image_tensor.half().cuda()
 
-    async def load_one_image(self, image_src):
-        image = await asyncio.to_thread(self._load_one_image, image_src)
-        return image
     async def load_image(self, image_srcs):
         # images = []
         image_srcs = image_srcs if isinstance(image_srcs, list) else [image_srcs]
         st = time.time()
         # loop = asyncio.get_event_loop()
         asyncio
-        tasks = [asyncio.create_task(self.load_one_image(image_src)) for image_src in image_srcs]
+        tasks = [asyncio.create_task(self._load_one_image(image_src)) for image_src in image_srcs]
         # loop.run_until_complete((asyncio.gather(*[self.load_one_image(image_src_i) for image_src_i in image_srcs])))
         images = await asyncio.gather(*tasks)
         # print(images)

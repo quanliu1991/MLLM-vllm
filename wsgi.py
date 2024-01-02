@@ -42,7 +42,7 @@ async def detect_urls(request: Request, body: BatchQueryBody) -> BatchResponse:
     s_time = time.time()
     engine: Engine = request.app.state.detector
     try:
-        res = engine.batch_predict(
+        res = await engine.batch_predict(
             model_id=body.model_id,
             prompts=body.prompts,
             initial_prompt=body.initial_prompt,
