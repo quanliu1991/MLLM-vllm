@@ -1,6 +1,5 @@
 import copy
 import json
-import logging
 import os
 import torch
 import time
@@ -12,6 +11,7 @@ from api.config import EnvVar
 from api.schemas.response import Answer
 
 from vllm.logger import init_logger
+
 logger = init_logger(__name__)
 dectypt = os.getenv('IS_ENCRYPT') != 'false'
 
@@ -32,8 +32,8 @@ class Engine:
             if dectypt:
                 self.base_model_dectypted = self.get_base_model_id(model_id)
                 if self.base_model_dectypted:
-                        self.base_model_id = self.base_model_dectypted
-                        self.lora_model_id = None
+                    self.base_model_id = self.base_model_dectypted
+                    self.lora_model_id = None
                 else:
                     a = ModelProtector(xor_key=12, user_id="omchat", model_version=1)
                     encrypt_model_path = os.path.join("{}/{}".format(self.resources_prefix, model_id + '.linker'))
@@ -131,7 +131,6 @@ class Engine:
                 enforce_eager=False
             )
 
-
         base_state_dict = {}
         for name, para in get_model_state_dict(base_model).items():
             base_state_dict[name] = copy.deepcopy(para).to("cpu")
@@ -140,38 +139,6 @@ class Engine:
         if dectypt:
             os.system("rm -rf {}/{}".format(self.resources_prefix, base_model_id))
         return self.base_model.get(base_model_id)
-
-    def predict(
-            self,
-            model_id,
-            image,
-            src_type,
-            text,
-            # TODO add choice
-            choices,
-            initial_prompt,
-            temperature=0.2,
-            max_tokens=1024,
-            top_p=1,
-    ):
-        model = self.load_model(model_id)
-        # TODO: 支持每张图配置不同参数
-        # TODO: stop机制
-        sampling_params = SamplingParams(
-            temperature=temperature, max_tokens=max_tokens, top_p=top_p, stop=["<|im_end|>"]
-        )
-        if isinstance(text, str):
-            text = [{"user": text}]
-        res = model.generate(
-            prompts=[text],
-            images=[{"src_type": src_type, "image_src": image} if image is not None else None],
-            sampling_params=sampling_params,
-            initial_prompt=initial_prompt,
-        )
-        generated_text = res[0].outputs[0].text
-        input_tokens = len(res[0].prompt_token_ids)
-        output_tokens = len(res[0].outputs[0].token_ids)
-        return Answer(content=generated_text, input_tokens=input_tokens, output_tokens=output_tokens)
 
     async def batch_predict(
             self,
@@ -182,10 +149,10 @@ class Engine:
             max_tokens=1024,
             top_p=1,
     ):
-        st=time.time()
+        st = time.time()
         model = self.load_model(model_id)
-        et=time.time()
-        logger.warning("self.load_model(model_id):{}".format(et-st))
+        et = time.time()
+        logger.warning("self.load_model(model_id):{}".format(et - st))
         sampling_params = SamplingParams(
             temperature=temperature, max_tokens=max_tokens, top_p=top_p, stop=["<|im_end|>"], presence_penalty=1,
             frequency_penalty=1
@@ -199,7 +166,7 @@ class Engine:
             texts.append(item.dict()['records'])
             choices.append(item.dict()['choices'])
         et = time.time()
-        logger.warning("for item in prompts:{}".format(et-st))
+        logger.warning("for item in prompts:{}".format(et - st))
 
         res = await model.generate(
             prompts=texts,
