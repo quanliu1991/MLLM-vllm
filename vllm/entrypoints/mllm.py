@@ -5,9 +5,6 @@ from io import BytesIO
 import aiohttp
 from linker_atom.lib.load_image import mmap_to_pil
 from PIL import Image
-# from joblib import Parallel, delayed, parallel_backend
-
-os.environ['chat_format'] = 'chatml'
 from typing import List, Optional, Union
 import asyncio
 from tqdm import tqdm
@@ -18,32 +15,31 @@ from vllm.sampling_params import SamplingParams
 from vllm.worker.model_runner import MModelRunner, CUDAMGraphRunner
 from vllm.engine.conversation import (Conversation, SeparatorStyle,
                                       conv_templates)
-from vllm.engine.mllm_engine import (DEFAULT_IM_END_TOKEN,
-                                     DEFAULT_IM_START_TOKEN,
-                                     DEFAULT_IMAGE_PATCH_TOKEN, MLLMEngine)
+from vllm.engine.mllm_engine import MLLMEngine
 from vllm.utils import Counter
 from vllm.logger import init_logger
+
 logger = init_logger(__name__)
 
 
 class MLLM(LLM):
     def __init__(
-        self,
-        model: str,
-        tokenizer: Optional[str] = None,
-        tokenizer_mode: str = "auto",
-        trust_remote_code: bool = False,
-        tensor_parallel_size: int = 1,
-        dtype: str = "auto",
-        quantization: Optional[str] = None,
-        revision: Optional[str] = None,
-        tokenizer_revision: Optional[str] = None,
-        seed: int = 0,
-        gpu_memory_utilization: float = 0.9,
-        swap_space: int = 4,
-        enforce_eager: bool = False,
-        max_context_len_to_capture: int = 8192,
-        **kwargs,
+            self,
+            model: str,
+            tokenizer: Optional[str] = None,
+            tokenizer_mode: str = "auto",
+            trust_remote_code: bool = False,
+            tensor_parallel_size: int = 1,
+            dtype: str = "auto",
+            quantization: Optional[str] = None,
+            revision: Optional[str] = None,
+            tokenizer_revision: Optional[str] = None,
+            seed: int = 0,
+            gpu_memory_utilization: float = 0.9,
+            swap_space: int = 4,
+            enforce_eager: bool = False,
+            max_context_len_to_capture: int = 8192,
+            **kwargs,
     ) -> None:
         if "disable_log_stats" not in kwargs:
             kwargs["disable_log_stats"] = True
@@ -73,20 +69,22 @@ class MLLM(LLM):
         self.mllm_engine = MLLMEngine.from_engine_args(engine_args)
         self.request_counter = Counter()
 
-        # # self.conv_mode = "llava_v1" if "v1" in model.lower() else "multimodal"
-        if os.getenv('chat_format') == 'chatml': self.conv_mode = 'chatml'
-        elif "n24" in model.lower(): self.conv_mode = "zh"
-        else: self.conv_mode = "llava_v1"
+        if os.getenv('chat_format') == 'chatml':
+            self.conv_mode = 'chatml'
+        elif "n24" in model.lower():
+            self.conv_mode = "zh"
+        else:
+            self.conv_mode = "llava_v1"
 
     async def generate(
-        self,
-        prompts: Optional[Union[str, List[str]]] = None,
-        images: Optional[Union[dict, List[dict]]] = None,
-        choices: Optional[List[List[str]]] = None,
-        sampling_params: Optional[SamplingParams] = None,
-        prompt_token_ids: Optional[List[List[int]]] = None,
-        use_tqdm: bool = False,
-        initial_prompt: Optional[str] = None,
+            self,
+            prompts: Optional[Union[str, List[str]]] = None,
+            images: Optional[Union[dict, List[dict]]] = None,
+            choices: Optional[List[List[str]]] = None,
+            sampling_params: Optional[SamplingParams] = None,
+            prompt_token_ids: Optional[List[List[int]]] = None,
+            use_tqdm: bool = False,
+            initial_prompt: Optional[str] = None,
     ) -> List[RequestOutput]:
         """Generates the completions for the input prompts.
 
@@ -139,13 +137,13 @@ class MLLM(LLM):
         if initial_prompt:
             if self.conv_mode == 'chatml':
                 conv_template = Conversation(system=initial_prompt, roles=("USER", "ASSISTANT"),
-                                            version="v1", messages=(),
-                                            offset=0, sep_style=SeparatorStyle.TWO,
-                                            sep=" ", sep2="<|im_end|>",)
+                                             version="v1", messages=(),
+                                             offset=0, sep_style=SeparatorStyle.TWO,
+                                             sep=" ", sep2="<|im_end|>", )
             else:
                 conv_template = Conversation(system=initial_prompt, roles=("USER", "ASSISTANT"),
                                              version="v1", messages=(), offset=0, sep_style=SeparatorStyle.TWO,
-                                            sep=" ",sep2="</s>",)
+                                             sep=" ", sep2="</s>", )
         else:
             conv_template = None
 
@@ -191,8 +189,6 @@ class MLLM(LLM):
                 async with session.get(image_file, timeout=30) as response:
                     image_file = await response.read()
             image = Image.open(BytesIO(image_file)).convert('RGB')
-            # response = await requests.get(image_file, timeout=10)
-            # image = Image.open(BytesIO(response_f)).convert('RGB')
         elif src_type == "local":
             image = Image.open(image_file).convert('RGB')
         elif src_type == "base64":
@@ -202,38 +198,29 @@ class MLLM(LLM):
         else:
             assert 0, "src_type is not true"
 
-        # print("_load_one_image——doen")
         image_tensor = \
             self.mllm_engine.workers[0].model_runner.model.model.image_processor(image, return_tensors='pt')[
                 'pixel_values'][0]
-        # print("image_processor")
         return image_tensor.half().cuda()
 
     async def load_image(self, image_srcs):
-        # images = []
+
         image_srcs = image_srcs if isinstance(image_srcs, list) else [image_srcs]
         st = time.time()
-        # loop = asyncio.get_event_loop()
-        asyncio
         tasks = [asyncio.create_task(self._load_one_image(image_src)) for image_src in image_srcs]
-        # loop.run_until_complete((asyncio.gather(*[self.load_one_image(image_src_i) for image_src_i in image_srcs])))
         images = await asyncio.gather(*tasks)
-        # print(images)
         et = time.time()
         logger.warning("parallel_backend:{}".format(et - st))
-            # images = Parallel(n_jobs=len(image_srcs),backend="threading")(
-            #     delayed(load_one_image)(image_src_i) for image_src_i in image_srcs)
         return images
 
-
     def _add_request(
-        self,
-        prompt: Optional[List[str]],
-        sampling_params: SamplingParams,
-        prompt_token_ids: Optional[List[int]],
-        image: Optional[dict] = None,
-        conv: Optional[Conversation] = None,
-        choice: Optional[List[str]] = None
+            self,
+            prompt: Optional[List[str]],
+            sampling_params: SamplingParams,
+            prompt_token_ids: Optional[List[int]],
+            image: Optional[dict] = None,
+            conv: Optional[Conversation] = None,
+            choice: Optional[List[str]] = None
     ) -> None:
         request_id = str(next(self.request_counter))
 
@@ -254,13 +241,25 @@ class MLLM(LLM):
             pbar = tqdm(total=num_requests, desc="Processed prompts")
         # Run the engine.
         outputs: List[RequestOutput] = []
+        prompt_time = None
+        decode_time = []
         while self.mllm_engine.has_unfinished_requests():
+            st = time.time()
             step_outputs = self.mllm_engine.step()
+            et = time.time()
+            if prompt_time is None:
+                prompt_time = et - st
+            else:
+                decode_time.append(et-st)
             for output in step_outputs:
                 if output.finished:
                     outputs.append(output)
                     if use_tqdm:
                         pbar.update(1)
+
+        logger.warning("prompt_time:{}".format(prompt_time))
+        logger.warning("decode_time:{}".format(sum(decode_time)/len(decode_time)))
+
         if use_tqdm:
             pbar.close()
         # Sort the outputs by request ID.
@@ -269,20 +268,21 @@ class MLLM(LLM):
         outputs = sorted(outputs, key=lambda x: int(x.request_id))
         return outputs
 
+
 if __name__ == "__main__":
     model = "/app/vllm/llm_models/qllama-7b-chat_bk"
     # lora_weight_id = "/app/vllm/llm_models/omchat_mcqa_1_2519"
     lora_weight_id = "/app/vllm/llm_models/omchat-llava-qllama-7b-chat-v1-1-finetune_qlora_zh_n67"
 
-
-    model = MLLM(model=model, tokenizer=model,  lora_weight_id=lora_weight_id, dtype="float16",
-                max_num_batched_tokens=6144)
+    model = MLLM(model=model, tokenizer=model, lora_weight_id=lora_weight_id, dtype="float16",
+                 max_num_batched_tokens=6144)
     sampling_params = SamplingParams(
         temperature=0.9, max_tokens=512, top_p=1, stop=["<|im_end|>"], presence_penalty=1,
         frequency_penalty=1
     )
     images = [{"src_type": "url",
-                 "image_src": "https://img0.baidu.com/it/u=56109659,3345510515&fm=253&fmt=auto&app=138&f=JPEG?w=889&h=500"} for _ in range(10)]
+               "image_src": "https://img0.baidu.com/it/u=56109659,3345510515&fm=253&fmt=auto&app=138&f=JPEG?w=889&h=500"}
+              for _ in range(10)]
     prompts = [[{"user": "你是谁"}] for _ in range(10)]
     choices = [["A", "B", "C", "D"] for _ in range(10)]
 
