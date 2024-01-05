@@ -1,4 +1,5 @@
 """A layer that samples the next tokens from the model's outputs."""
+import time
 from typing import Dict, List, Optional, Tuple
 
 import torch
@@ -39,8 +40,11 @@ class Sampler(nn.Module):
         embedding_bias: Optional[torch.Tensor] = None,
     ) -> SamplerOutput:
         # Get the hidden states that we use for sampling.
+        st=time.time()
         hidden_states = _prune_hidden_states(hidden_states, sampling_metadata)
-
+        et = time.time()
+        print("_prune_hidden_states{}".format(et-st))
+        st = time.time()
         # Get the logits for the next tokens.
         logits = _get_logits(hidden_states, embedding, embedding_bias,
                              self.vocab_size)
@@ -73,7 +77,9 @@ class Sampler(nn.Module):
 
         if do_min_p:
             logits = _apply_min_p(logits, sampling_tensors.min_ps)
-
+        et = time.time()
+        print("Get the logits for the next tokens.{}".format(et - st))
+        st = time.time()
         # We use float32 for probabilities and log probabilities.
         # Compute the probabilities.
         #TODO(liu_quan) MCQA probs compute
@@ -87,6 +93,8 @@ class Sampler(nn.Module):
         # Get the logprobs query results.
         prompt_logprobs, sample_logprobs = _get_logprobs(
             logprobs, sampling_metadata, sample_results)
+        et = time.time()
+        print("Compute the probabilities.{}".format(et - st))
         return _build_sampler_output(sample_results, sampling_metadata,
                                      prompt_logprobs, sample_logprobs)
 

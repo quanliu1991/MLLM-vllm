@@ -587,9 +587,12 @@ class LLMEngine:
         and updates the scheduler with the model outputs. Finally, it decodes
         the sequences and returns the newly generated results.
         """
+        st = time.perf_counter()
         seq_group_metadata_list, scheduler_outputs = self.scheduler.schedule()
-
+        et = time.perf_counter()
+        print("scheduler.schedule(){}".format(st - et))
         # Execute the model.
+        st = time.perf_counter()
         output = self._run_workers(
             "execute_model",
             seq_group_metadata_list=seq_group_metadata_list,
@@ -597,8 +600,14 @@ class LLMEngine:
             blocks_to_swap_out=scheduler_outputs.blocks_to_swap_out,
             blocks_to_copy=scheduler_outputs.blocks_to_copy,
         ) if not scheduler_outputs.is_empty() else []
+        et = time.perf_counter()
+        print("_run_workers{}".format(et - st))
 
-        return self._process_model_outputs(output, scheduler_outputs)
+        st=time.perf_counter()
+        outputs= self._process_model_outputs(output, scheduler_outputs)
+        et=time.perf_counter()
+        print("_process_model_outputs{}".format(st-et))
+        return outputs
 
     def _log_system_stats(
         self,
@@ -737,8 +746,10 @@ class LLMEngine:
                 executor = partial(worker.execute_method.remote, method)
             else:
                 executor = getattr(worker, method)
-
+            st=time.perf_counter()
             output = executor(*args, **kwargs)
+            et = time.perf_counter()
+            print("output = executor(*args, **kwargs){}".format(et-st))
             all_outputs.append(output)
         if self.parallel_config.worker_use_ray:
             all_outputs = ray.get(all_outputs)

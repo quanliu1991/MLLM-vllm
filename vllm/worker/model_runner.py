@@ -796,6 +796,7 @@ class MModelRunner(ModelRunner):
     ) -> SamplerOutput:
         # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes.
+        st = time.perf_counter()
         is_prompt = seq_group_metadata_list[0].is_prompt
         # Prepare input tensors.
         if is_prompt:
@@ -807,13 +808,15 @@ class MModelRunner(ModelRunner):
             image_datas = [{} for _ in range(input_tokens.shape[0])]
         sampling_metadata = self._prepare_sample(seq_group_metadata_list,
                                                  input_metadata.prompt_lens)
-
+        et = time.perf_counter()
+        print("准备输入{}".format(et - st))
         # Execute the model.
         if input_metadata.use_cuda_graph:
             graph_batch_size = input_tokens.shape[0]
             model_executable = self.graph_runners[graph_batch_size]
         else:
             model_executable = self.model
+        st=time.perf_counter()
         hidden_states = model_executable(
             input_ids=input_tokens,
             image_datas=image_datas,
@@ -822,12 +825,16 @@ class MModelRunner(ModelRunner):
             input_metadata=input_metadata,
             cache_events=None,
         )
-
+        et = time.perf_counter()
+        print(et-st)
         # Sample the next token.
+        st = time.perf_counter()
         output = self.model.sample(
             hidden_states=hidden_states,
             sampling_metadata=sampling_metadata,
         )
+        et = time.perf_counter()
+        print("output = self.model.sample{}".format(et - st))
         return output
 
 
