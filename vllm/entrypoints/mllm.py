@@ -176,6 +176,11 @@ class MLLM(LLM):
         #             out.text = out.text[: -len(stop_str)]
         return result
 
+    def image_to_base64(self, image_path):
+        with open(image_path, "rb") as image_file:
+            encoded_string = base64.b64encode(image_file.read())
+            return encoded_string.decode('utf-8')
+
     async def _load_one_image(self, image_src):
         # time.sleep(5)
         # print("_load_one_image")
@@ -258,7 +263,8 @@ class MLLM(LLM):
                         pbar.update(1)
 
         logger.warning("prompt_time:{}".format(prompt_time))
-        logger.warning("decode_time:{}".format(sum(decode_time)/len(decode_time)))
+        if len(decode_time)>0:
+            logger.warning("decode_time:{}".format(sum(decode_time)/len(decode_time)))
 
         if use_tqdm:
             pbar.close()
