@@ -230,7 +230,7 @@ class MLLMEngine(LLMEngine):
                     choice_postfix = os.getenv("CHOICE_POSTFIX", "请选择正确的答案。")
                     q["user"] += "\n" + choice_style(choice, choice_postfix)
 
-                if i == 0 and image:
+                if i == 0 and image is not None:
                     conv.append_message(conv.roles[0],
                                         self._add_image_token(q["user"], image_token_len, mm_use_im_start_end,
                                                               conv.roles[0]))
@@ -260,9 +260,6 @@ class MLLMEngine(LLMEngine):
             inp = f"{role}: " + qs
             qs = f"{role}:" + DEFAULT_IMAGE_PATCH_TOKEN * image_token_len + '\n' + inp
         return qs
-
-
-
 
 
 def choice_style(choice: List, postfix: str):
