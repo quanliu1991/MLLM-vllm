@@ -55,12 +55,14 @@ class EngineArgs:
         parser.add_argument(
             '--model',
             type=str,
-            default='facebook/opt-125m',
+            # default='facebook/opt-125m',
+            default='../../resources/llama-2-7b',
             help='name or path of the huggingface model to use')
         parser.add_argument(
             '--tokenizer',
             type=str,
-            default=EngineArgs.tokenizer,
+            # default=EngineArgs.tokenizer,
+            default="../../resources/llama-2-7b",
             help='name or path of the huggingface tokenizer to use')
         parser.add_argument(
             '--revision',
@@ -205,6 +207,18 @@ class EngineArgs:
                             help='maximum context length covered by CUDA '
                             'graphs. When a sequence has context length '
                             'larger than this, we fall back to eager mode.')
+        parser.add_argument('--base-model-id',
+                            type=str,
+                            default=None,
+                            help='base model when with lora')
+        parser.add_argument('--model-runner',
+                            type=Type[ModelRunner],
+                            default=ModelRunner,
+                            help='model runner')
+        parser.add_argument('--cuda-graph-runner',
+                            type=Type[CUDAGraphRunner],
+                            default=CUDAGraphRunner,
+                            help='model runner')
         return parser
 
     @classmethod
