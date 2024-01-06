@@ -247,9 +247,9 @@ class MLLMEngine(LLMEngine):
         return prompt, prompt_token_ids
 
     def _get_image_config(self):
-        mm_use_im_start_end = self.workers[0].model_runner.model.model.vision_tower[0].config.use_im_start_end
-        image_size = self.workers[0].model_runner.model.model.vision_tower[0].config.image_size
-        patch_size = self.workers[0].model_runner.model.model.vision_tower[0].config.patch_size
+        mm_use_im_start_end = self.driver_worker.model_runner.model.model.vision_tower[0].config.use_im_start_end
+        image_size = self.driver_worker.model_runner.model.model.vision_tower[0].config.image_size
+        patch_size = self.driver_worker.model_runner.model.model.vision_tower[0].config.patch_size
         image_token_len = int((image_size / patch_size) ** 2)
         return image_token_len, mm_use_im_start_end
 
