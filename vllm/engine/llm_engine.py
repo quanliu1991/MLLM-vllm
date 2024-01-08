@@ -101,6 +101,7 @@ class LLMEngine:
             tokenizer_mode=model_config.tokenizer_mode,
             trust_remote_code=model_config.trust_remote_code,
             tokenizer_revision=model_config.tokenizer_revision,
+            max_model_len=model_config.max_model_len,
             revision=model_config.revision)
         self.seq_counter = Counter()
 
