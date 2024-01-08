@@ -16,9 +16,40 @@ def get_tokenizer(
     tokenizer_mode: str = "auto",
     trust_remote_code: bool = False,
     tokenizer_revision: Optional[str] = None,
+    max_model_len: int = 2048,
+    cache_dir = None,
     **kwargs,
 ) -> Union[PreTrainedTokenizer, PreTrainedTokenizerFast]:
     """Gets a tokenizer for the given model name via Huggingface."""
+    if 'mpt' in tokenizer_name.lower():
+        tokenizer = AutoTokenizer.from_pretrained(
+            tokenizer_name,
+            cache_dir=cache_dir,
+            model_max_length=max_model_len,
+            padding_side="right"
+        )
+    elif 'qwen' in tokenizer_name.lower():
+        tokenizer = AutoTokenizer.from_pretrained(
+            tokenizer_name,
+            cache_dir=cache_dir,
+            trust_remote_code=True,
+            model_max_length=max_model_len,
+            padding_side="right",
+            use_fast=True,
+        )
+        tokenizer.pad_token_id = tokenizer.eod_id
+
+    #    tokenizer = transformers.AutoTokenizer.from_pretrained(model_args.model_name_or_path, trust_remote_code=True)
+
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(
+            tokenizer_name,
+            cache_dir=cache_dir,
+            model_max_length=max_model_len,
+            padding_side="right",
+            use_fast=False,
+        )
+    return tokenizer
     if os.getenv('chat_format') == 'chatml':
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=False)
         return tokenizer
