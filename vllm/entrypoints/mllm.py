@@ -69,8 +69,8 @@ class MLLM(LLM):
         self.mllm_engine = MLLMEngine.from_engine_args(engine_args)
         self.request_counter = Counter()
 
-        if os.getenv('chat_format') == 'chatml':
-            self.conv_mode = 'chatml'
+        if os.getenv('chat_format',None) is not None:
+            self.conv_mode = os.getenv('chat_format')
         elif "n24" in model.lower():
             self.conv_mode = "zh"
         else:
@@ -134,18 +134,16 @@ class MLLM(LLM):
             # Use default sampling params.
             sampling_params = SamplingParams()
 
-        if initial_prompt:
-            if self.conv_mode == 'chatml':
-                conv_template = Conversation(system=initial_prompt, roles=("USER", "ASSISTANT"),
-                                             version="v1", messages=(),
-                                             offset=0, sep_style=SeparatorStyle.TWO,
-                                             sep=" ", sep2="<|im_end|>", )
-            else:
-                conv_template = Conversation(system=initial_prompt, roles=("USER", "ASSISTANT"),
-                                             version="v1", messages=(), offset=0, sep_style=SeparatorStyle.TWO,
-                                             sep=" ", sep2="</s>", )
+
+        # TODO To support multiple conv_templates
+        if self.conv_mode in conv_templates:
+            conv_template = conv_templates[self.conv_mode]
         else:
-            conv_template = None
+            conv_template= conv_templates["vicuna_v1"]
+
+        if initial_prompt:
+            conv_template.system=initial_prompt
+
 
         # Add requests to the engine.
         num_requests = len(prompts) if prompts is not None else len(
@@ -154,10 +152,7 @@ class MLLM(LLM):
         image_datas = await self.load_image(images)
 
         for i in range(num_requests):
-            if conv_template:
-                conv = conv_template.copy()
-            else:
-                conv = conv_templates[self.conv_mode].copy()
+            conv = conv_template.copy()
             prompt = prompts[i] if prompts is not None else None
             token_ids = prompt_token_ids[i] if prompt_token_ids is not None else None
             image = image_datas[i]
