@@ -4,6 +4,7 @@ import time
 
 
 from vllm import LLMEngine
+from vllm.engine.constants import IMAGE_TOKEN_INDEX
 from vllm.sampling_params import SamplingParams
 from typing import List, Optional
 from vllm.logger import init_logger
@@ -209,9 +210,10 @@ class MLLMEngine(LLMEngine):
         self.scheduler.add_seq_group(seq_group)
 
     def _get_input_prompt(self, choice, conv, image, image_token_len, mm_use_im_start_end, prompt, prompt_token_ids):
+        has_image = True if image is not None else False
         if os.getenv('chat_format') == 'chatml':
-            if image is not None:
-                prompt, prompt_token_ids = self.make_context(tokenizer=self.tokenizer,
+            if has_image:
+                input_prompt, prompt_token_ids = self.make_context(tokenizer=self.tokenizer,
                                                              query=DEFAULT_IMAGE_PATCH_TOKEN * image_token_len + "\n" +
                                                                    prompt[-1]['user'],
                                                              choice=choice,
@@ -219,32 +221,73 @@ class MLLMEngine(LLMEngine):
                                                              system=conv.system if conv != None else '',
                                                              image_token_len=image_token_len)
             else:
-                prompt, prompt_token_ids = self.make_context(tokenizer=self.tokenizer,
+                input_prompt, prompt_token_ids = self.make_context(tokenizer=self.tokenizer,
                                                              query=prompt[-1]['user'],
                                                              choice=choice,
                                                              history=prompt[:-1],
                                                              system=conv.system if conv != None else '')
+
         else:
-            for i, q in enumerate(prompt):
-                if choice and i + 1 == len(prompt):
-                    choice_postfix = os.getenv("CHOICE_POSTFIX", "请选择正确的答案。")
-                    q["user"] += "\n" + choice_style(choice, choice_postfix)
+            if not has_image:
+                conv.messages = []
+                for i, (role, sentence) in enumerate(prompt[0].items()):
+                    roles = {"user": conv.roles[0], "assistant": conv.roles[1]}
+                    role = roles[role]
+                    assert role == conv.roles[i % 2], f"{i}"
+                    conv.append_message(role, sentence)
+                input_prompt = conv.get_prompt()
+                prompt_token_ids = self.tokenizer(
+                    input_prompt,
+                    return_tensors=None,
+                    padding="longest",
+                    max_length=self.tokenizer.model_max_length,
+                    truncation=True,
+                ).input_ids
 
-                if i == 0 and image is not None:
-                    conv.append_message(conv.roles[0],
-                                        self._add_image_token(q["user"], image_token_len, mm_use_im_start_end,
-                                                              conv.roles[0]))
-                else:
-                    conv.append_message(conv.roles[0], q["user"])
+            else:
+                conv.messages = []
+                for i, (role, sentence) in enumerate(prompt[0].items()):
+                    roles = {"user": conv.roles[0], "assistant": conv.roles[1]}
+                    role = roles[role]
+                    assert role == conv.roles[i % 2], f"{i}"
+                    if i == 0:
+                        conv.append_message(role, self._add_image_token(sentence, mm_use_im_start_end, image_token_len))
+                input_prompt = conv.get_prompt()
+                prompt_token_ids = self.tokenizer(
+                    input_prompt,
+                    return_tensors=None,
+                    padding="longest",
+                    max_length=self.tokenizer.model_max_length,
+                    truncation=True,
+                ).input_ids
+                # prompt_token_ids = tokenizer_image_token(input_prompt, self.tokenizer,image_token_index= return_tensors=None)
+        print(input_prompt)
+        return input_prompt, prompt_token_ids
 
-                if i + 1 == len(prompt):
-                    conv.append_message(conv.roles[1], None)
-                else:
-                    conv.append_message(conv.roles[1], q["assistant"])
 
-            prompt = conv.get_prompt()
-            prompt_token_ids = self.tokenizer.encode(prompt)
-        return prompt, prompt_token_ids
+
+        #
+        # else:
+        #     for i, q in enumerate(prompt):
+        #         if choice and i + 1 == len(prompt):
+        #             choice_postfix = os.getenv("CHOICE_POSTFIX", "请选择正确的答案。")
+        #             q["user"] += "\n" + choice_style(choice, choice_postfix)
+        #
+        #         if i == 0 and image is not None:
+        #             conv.append_message(conv.roles[0],
+        #                                 self._add_image_token(q["user"], image_token_len, mm_use_im_start_end,
+        #                                                       conv.roles[0]))
+        #         else:
+        #             conv.append_message(conv.roles[0], q["user"])
+        #
+        #         if i + 1 == len(prompt):
+        #             conv.append_message(conv.roles[1], None)
+        #         else:
+        #             conv.append_message(conv.roles[1], q["assistant"])
+        #
+        #     prompt = conv.get_prompt()
+        #     prompt_token_ids = self.tokenizer.encode(prompt)
+        # return prompt, prompt_token_ids
 
     def _get_image_config(self):
         mm_use_im_start_end = self.workers[0].model_runner.model.model.vision_tower[0].config.use_im_start_end
@@ -253,14 +296,37 @@ class MLLMEngine(LLMEngine):
         image_token_len = int((image_size / patch_size) ** 2)
         return image_token_len, mm_use_im_start_end
 
-    def _add_image_token(self, qs, image_token_len, mm_use_im_start_end, role):
+
+    #TODO prompt stpy
+    def _add_image_token(self, prompt, mm_use_im_start_end, image_token_len):
         if mm_use_im_start_end:
-            qs = qs + '\n' + DEFAULT_IM_START_TOKEN + DEFAULT_IMAGE_PATCH_TOKEN * image_token_len + DEFAULT_IM_END_TOKEN
+            prompt =  DEFAULT_IM_START_TOKEN + DEFAULT_IMAGE_PATCH_TOKEN * image_token_len + DEFAULT_IM_END_TOKEN + prompt
         else:
-            inp = f"{role}: " + qs
-            qs = f"{role}:" + DEFAULT_IMAGE_PATCH_TOKEN * image_token_len + '\n' + inp
-        return qs
+            prompt = DEFAULT_IMAGE_PATCH_TOKEN * image_token_len + "\n" + prompt
+        return prompt
 
 
 def choice_style(choice: List, postfix: str):
     return "\n" + "选项：" + "\n" + "\n".join(choice) + "\n" + postfix
+
+def tokenizer_image_token(prompt, tokenizer, image_token_index=IMAGE_TOKEN_INDEX, return_tensors=None):
+    prompt_chunks = [tokenizer(chunk).input_ids for chunk in prompt.split(DEFAULT_IMAGE_PATCH_TOKEN)]
+
+    def insert_separator(X, sep):
+        return [ele for sublist in zip(X, [sep]*len(X)) for ele in sublist][:-1]
+
+    input_ids = []
+    offset = 0
+    if len(prompt_chunks) > 0 and len(prompt_chunks[0]) > 0 and prompt_chunks[0][0] == tokenizer.bos_token_id:
+        offset = 1
+        input_ids.append(prompt_chunks[0][0])
+
+    for x in insert_separator(prompt_chunks, [image_token_index] * (offset + 1)):
+        input_ids.extend(x[offset:])
+
+    if return_tensors is not None:
+        if return_tensors == 'pt':
+            return torch.tensor(input_ids, dtype=torch.long)
+        raise ValueError(f'Unsupported tensor type: {return_tensors}')
+    return input_ids
+
