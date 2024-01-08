@@ -20,6 +20,7 @@
 import json
 import os
 import re
+from copy import copy, deepcopy
 from typing import List, Optional, Tuple, Union
 import torch
 import torch.nn as nn
@@ -153,7 +154,16 @@ class LlavaLlamaModel(nn.Module):
         #     input_ids = convert(input_ids.clone(), 32000, IMAGE_PATCH_ID)
 
         if inputs_embeds is None:
-            inputs_embeds = self.llama_model.embed_tokens(input_ids)
+            temp_input_ids = deepcopy(input_ids)
+            try:
+                image_index = torch.where(temp_input_ids == DEFAULT_IMAGE_PATCH_TOKEN)
+                image_index_list=[]
+                for i in range(image_index[0].shape[0]):
+                    image_index_list.append((image_index[0][i],image_index[1][i]))
+                    temp_input_ids[image_index[0][i]][image_index[1][i]]=1
+            except:
+                image_index=None
+            inputs_embeds = self.llama_model.embed_tokens(temp_input_ids)
 
         vision_tower = getattr(self, 'vision_tower', None)
 
@@ -202,6 +212,32 @@ class LlavaLlamaModel(nn.Module):
         hidden_states = self.llama_model(input_ids, positions, kv_caches,
                                          input_metadata, inputs_embeds=inputs_embeds)
         return hidden_states
+
+    def updata_input_embed_with_one_index(self,input_ids, inputs_embeds, batch_image_tensors, vision_tower, image_index_list):
+        image_tensors_list = [image_tensors[0] for image_tensors in batch_image_tensors]
+        assert len(image_tensors_list)==len(image_index_list)
+        use_im_start_end = vision_tower.config.use_im_start_end
+        if use_im_start_end:
+            image_start_id = vision_tower.config.im_start_token
+            image_end_id = vision_tower.config.im_end_token
+        image_patch_id = vision_tower.config.im_patch_token
+        if image_tensors_list:
+            number_patch = int(image_tensors_list[0].shape[0])
+        else:
+            return inputs_embeds
+        new_input_embed=[]
+        offset=0
+        for i in range(len(input_ids)):
+            one_input_embed= []
+            if i == image_index_list[i-offset][0]:
+                one_input_embed = torch.cat((inputs_embeds[i][:image_index_list[i - offset][1]], image_tensors_list[i - offset],
+                           inputs_embeds[i][image_index_list[i - offset][1] + 1:]), dim=0)
+            else:
+                offset+=1
+                one_input_embed=input_ids[i]
+            new_input_embed.append(one_input_embed)
+        return torch.stack(new_input_embed,dim=0)
+
 
     def updata_input_embed(self, input_ids, inputs_embeds, batch_image_tensors, vision_tower):
         image_tensors_list = [image_tensors[0] for image_tensors in batch_image_tensors]
