@@ -69,12 +69,12 @@ class MLLM(LLM):
         self.mllm_engine = MLLMEngine.from_engine_args(engine_args)
         self.request_counter = Counter()
 
+        #TODO standardization chat_format
         if os.getenv('chat_format',None) is not None:
             self.conv_mode = os.getenv('chat_format')
-        elif "n24" in model.lower():
-            self.conv_mode = "zh"
         else:
-            self.conv_mode = "llava_v1"
+            self.conv_mode = 'v1'
+
 
     async def generate(
             self,
@@ -111,6 +111,10 @@ class MLLM(LLM):
         if prompts is None and prompt_token_ids is None:
             raise ValueError("Either prompts or prompt_token_ids must be " "provided.")
 
+        if isinstance(prompts, str):
+            # Convert a single prompt to a list.
+            prompts = [prompts]
+
         assert len(prompts) == len(images), (
             f"The number of images entered should be the same as the number of text，get image number is "
             f"{len(images)} but text number is {len(prompts)}. "
@@ -123,9 +127,7 @@ class MLLM(LLM):
             "if choice is None, please use [] placeholder."
         )
 
-        if isinstance(prompts, str):
-            # Convert a single prompt to a list.
-            prompts = [prompts]
+
         if (prompts is not None and prompt_token_ids is not None
                 and len(prompts) != len(prompt_token_ids)):
             raise ValueError("The lengths of prompts and prompt_token_ids "

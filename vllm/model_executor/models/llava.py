@@ -32,7 +32,6 @@ from vllm.config import ModelConfig
 from vllm.model_executor import InputMetadata
 from vllm.model_executor.layers.sampler import Sampler
 from vllm.model_executor.models.llama import LlamaModel, KVCache
-from vllm.model_executor.parallel_utils.parallel_state import get_tensor_model_parallel_rank
 from vllm.model_executor.layers.linear import ColumnParallelLinear, LinearMethodBase
 from vllm.model_executor.layers.vocab_parallel_embedding import VocabParallelEmbedding
 from vllm.model_executor.weight_utils import (default_weight_loader,
@@ -40,13 +39,12 @@ from vllm.model_executor.weight_utils import (default_weight_loader,
 from vllm.model_executor.sampling_metadata import SamplingMetadata
 from vllm.sequence import SamplerOutput
 
-# from vllm.model_executor.weight_utils import hf_model_weights_iterator, load_tensor_parallel_weights
+
 
 DEFAULT_IMAGE_TOKEN = "<image>"
 DEFAULT_IMAGE_PATCH_TOKEN = "<im_patch>"
 DEFAULT_IM_START_TOKEN = "<im_start>"
 DEFAULT_IM_END_TOKEN = "<im_end>"
-# IMAGE_PATCH_ID = 32000
 
 CLIP_MODEL_MAP = {}
 
@@ -64,12 +62,11 @@ class LlavaLlamaModel(nn.Module):
         if hasattr(config, "mm_vision_tower"):
             # HACK: for FSDP
             mm_vision_tower = config.mm_vision_tower.split("/")[-1]
-            clip_model = os.path.abspath(config._name_or_path) + "/" + mm_vision_tower
+            clip_model = os.path.join(os.path.abspath(config._name_or_path), mm_vision_tower)
             assert os.path.isdir(
                 clip_model), f"not find {clip_model} dir. please check 'config.json' mm_vision_tower model in {config._name_or_path} "
             self.vision_tower = [CLIPVisionModel.from_pretrained(clip_model, torch_dtype=torch.float16).cuda()]
             self.image_processor = CLIPImageProcessor.from_pretrained(clip_model, torch_dtype=torch.float16)
-            # self.image_processor = CLIPImageProcessor.from_pretrained(self.config_class.mm_vision_tower,torch_dtype=torch.float16)
 
         if hasattr(config, "use_mm_proj"):
             projector_type = getattr(config, 'mm_projector_type', 'linear')
@@ -155,14 +152,14 @@ class LlavaLlamaModel(nn.Module):
 
         if inputs_embeds is None:
             temp_input_ids = deepcopy(input_ids)
-            try:
-                image_index = torch.where(temp_input_ids == DEFAULT_IMAGE_PATCH_TOKEN)
-                image_index_list=[]
-                for i in range(image_index[0].shape[0]):
-                    image_index_list.append((image_index[0][i],image_index[1][i]))
-                    temp_input_ids[image_index[0][i]][image_index[1][i]]=1
-            except:
-                image_index=None
+            # try:
+            #     image_index = torch.where(temp_input_ids == DEFAULT_IMAGE_PATCH_TOKEN)
+            #     image_index_list=[]
+            #     for i in range(image_index[0].shape[0]):
+            #         image_index_list.append((image_index[0][i],image_index[1][i]))
+            #         temp_input_ids[image_index[0][i]][image_index[1][i]]=1
+            # except:
+            #     image_index=None
             inputs_embeds = self.llama_model.embed_tokens(temp_input_ids)
 
         vision_tower = getattr(self, 'vision_tower', None)
@@ -326,8 +323,6 @@ class LlavaLlamaForCausalLM(nn.Module):
 
         hidden_states = self.model(input_ids, image_datas, positions, kv_caches,
                                    input_metadata, cache_events)
-        # next_tokens = self.sampler(self.lm_head.weight, hidden_states,
-        #                            input_metadata)
         return hidden_states
 
     def sample(
