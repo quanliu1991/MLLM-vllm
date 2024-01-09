@@ -92,7 +92,7 @@ class Engine:
         return base_model_id
 
     def _load_model_adapter(self, base_model, model_id):
-        model = base_model[0].mllm_engine.workers[0].model_runner.model
+        model = base_model[0].mllm_engine.driver_worker.model_runner.model
         base_state_dict = base_model[1]
         model_id_path = None
         if model_id:
@@ -115,7 +115,7 @@ class Engine:
                 raise RuntimeError("unzip failed, error code is {}. please connect engineer".format(status))
         base_model = self.base_model.get_last_model()
         if base_model:
-            model = base_model.mllm_engine.workers[0].model_runner.model
+            model = base_model.mllm_engine.driver_worker.model_runner.model
 
             model.load_weights(model_name_or_path="{}/{}".format(self.resources_prefix, base_model_id)
                                )

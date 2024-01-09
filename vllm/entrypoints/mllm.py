@@ -199,7 +199,7 @@ class MLLM(LLM):
             assert 0, "src_type is not true"
 
         image_tensor = \
-            self.mllm_engine.workers[0].model_runner.model.model.image_processor(image, return_tensors='pt')[
+            self.mllm_engine.driver_worker.model_runner.model.model.image_processor(image, return_tensors='pt')[
                 'pixel_values'][0]
         return image_tensor.half().cuda()
 
