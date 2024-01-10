@@ -20,6 +20,7 @@
 import json
 import os
 import re
+import time
 from copy import copy, deepcopy
 from typing import List, Optional, Tuple, Union
 import torch
@@ -39,14 +40,29 @@ from vllm.model_executor.weight_utils import (default_weight_loader,
 from vllm.model_executor.sampling_metadata import SamplingMetadata
 from vllm.sequence import SamplerOutput
 
-
-
 DEFAULT_IMAGE_TOKEN = "<image>"
 DEFAULT_IMAGE_PATCH_TOKEN = "<im_patch>"
 DEFAULT_IM_START_TOKEN = "<im_start>"
 DEFAULT_IM_END_TOKEN = "<im_end>"
 
 CLIP_MODEL_MAP = {}
+
+
+# experiment
+class GetImageFeature:
+    def __init__(self, vision_tower, mm_projecter, select_hidden_state_layer):
+        self.vision_tower = vision_tower
+        self.mm_projecter = mm_projecter
+        self.select_hidden_state_layer = select_hidden_state_layer
+
+    def batch_case_image_feature(self, batch_images):
+        pass
+
+    def for_case_image_feature(self, batch_images):
+        pass
+
+    def cuda_graph_infer(self):
+        pass
 
 
 class LlavaConfig(LlamaConfig):
@@ -172,47 +188,89 @@ class LlavaLlamaModel(nn.Module):
                     return True
             return False
 
+        prompt= False
         if vision_tower is not None and _is_have_image(batch_images):
             # TODO: this is a modified multimodal LLM -- Haotian Liu
             vision_tower = vision_tower[0]  # HACK: for FSDP
-            with torch.no_grad():
-                batch_image_tensors = []
-                for images in batch_images:
-                    if images is None:
-                        batch_image_tensors.append(images)
-                    elif type(images) is list:
-                        # variable length images
-                        image_features = []
-
-                        for image in images:
-                            image_forward_out = vision_tower(image.unsqueeze(0), output_hidden_states=True)
-                            # image_forward_out = vision_tower(image, output_hidden_states=True)
-                            select_hidden_state_layer = getattr(self.llama_model.config, "mm_vision_select_layer", -1)
-                            select_hidden_state = image_forward_out.hidden_states[select_hidden_state_layer]
-                            image_feature = select_hidden_state[:, 1:]
-                            image_feature = self.mm_projector(image_feature)[0]
-                            image_features.append(image_feature)
-                        batch_image_tensors.append(image_features)
-                    else:
-                        image_forward_outs = vision_tower(images.unsqueeze(0), output_hidden_states=True)
-                        select_hidden_state_layer = getattr(self.llama_model.config, "mm_vision_select_layer", -1)
-                        select_hidden_state = image_forward_outs.hidden_states[select_hidden_state_layer]
-                        image_features = select_hidden_state[:, 1:]
-                        image_features = self.mm_projector(image_features)[0]
-                        batch_image_tensors.append([image_features])
+            st = time.time()
+            batch_image_tensors = self.get_image_features_with_batch(batch_images, vision_tower)
+            et = time.time()
+            prompt =True
+            print("IFLT_batch:{}ms".format((et - st)*1000))
 
             # updata input embed
+            st = time.time()
             inputs_embeds = self.updata_input_embed(input_ids, inputs_embeds, batch_image_tensors, vision_tower)
+            et = time.time()
+            print("TIELT:{}ms".format((et - st) * 1000))
         else:
             inputs_embeds = self.llama_model.embed_tokens(input_ids)
-
+        st = time.time()
         hidden_states = self.llama_model(input_ids, positions, kv_caches,
                                          input_metadata, inputs_embeds=inputs_embeds)
+        et = time.time()
+        if prompt:
+            print("PSLT:{}ms".format((et - st) * 1000))
+        else:
+            print("DSLT:{}ms".format((et - st) * 1000))
         return hidden_states
 
-    def updata_input_embed_with_one_index(self,input_ids, inputs_embeds, batch_image_tensors, vision_tower, image_index_list):
+    def get_image_features_with_batch(self, batch_images, vision_tower):
+        select_hidden_state_layer = getattr(self.llama_model.config, "mm_vision_select_layer", -1)
+        with torch.no_grad():
+            batch_images_is_none = []
+            _batch_images = []
+            # todo if none not in list，do jump this for
+            for i, images in enumerate(batch_images):
+                if images is None:
+                    batch_images_is_none.append(i)
+                else:
+                    if isinstance(images, List):
+                        _batch_images.append(images[0])
+                    else:
+                        _batch_images.append(images)
+
+            image_forward_out = vision_tower(torch.stack(_batch_images, dim=0), output_hidden_states=True)
+            select_hidden_state = image_forward_out.hidden_states[select_hidden_state_layer]
+            image_feature = select_hidden_state[:, 1:]
+            image_feature = self.mm_projector(image_feature)
+            _batch_image_tensors = torch.split(image_feature, 1)
+            batch_image_tensors = [t.squeeze() for t in _batch_image_tensors]
+            if batch_images_is_none:
+                for i in batch_images:
+                    batch_image_tensors.index(None,i)
+        return batch_image_tensors
+
+    def get_image_features(self, batch_images, vision_tower):
+        with torch.no_grad():
+            batch_image_tensors = []
+            for images in batch_images:
+                if images is None:
+                    batch_image_tensors.append(images)
+                elif type(images) is list:
+                    # variable length images
+                    image_features = []
+                    for image in images:
+                        image_forward_out = vision_tower(image.unsqueeze(0), output_hidden_states=True)
+                        # image_forward_out = vision_tower(image, output_hidden_states=True)
+                        select_hidden_state_layer = getattr(self.llama_model.config, "mm_vision_select_layer", -1)
+                        select_hidden_state = image_forward_out.hidden_states[select_hidden_state_layer]
+                        image_feature = select_hidden_state[:, 1:]
+                        image_feature = self.mm_projector(image_feature)[0]
+                        image_features.append(image_feature)
+                    batch_image_tensors.append(image_features[0])
+                else:
+                    image_forward_outs = vision_tower(images.unsqueeze(0), output_hidden_states=True)
+                    select_hidden_state_layer = getattr(self.llama_model.config, "mm_vision_select_layer", -1)
+                    select_hidden_state = image_forward_outs.hidden_states[select_hidden_state_layer]
+                    image_features = select_hidden_state[:, 1:]
+                    image_features = self.mm_projector(image_features)[0]
+                    batch_image_tensors.append(image_features)
+        return batch_image_tensors
+    def updata_input_embed_with_one_index(self, input_ids, inputs_embeds, batch_image_tensors, vision_tower,
+                                          image_index_list):
         image_tensors_list = [image_tensors[0] for image_tensors in batch_image_tensors]
-        assert len(image_tensors_list)==len(image_index_list)
+        assert len(image_tensors_list) == len(image_index_list)
         use_im_start_end = vision_tower.config.use_im_start_end
         if use_im_start_end:
             image_start_id = vision_tower.config.im_start_token
@@ -222,22 +280,22 @@ class LlavaLlamaModel(nn.Module):
             number_patch = int(image_tensors_list[0].shape[0])
         else:
             return inputs_embeds
-        new_input_embed=[]
-        offset=0
+        new_input_embed = []
+        offset = 0
         for i in range(len(input_ids)):
-            one_input_embed= []
-            if i == image_index_list[i-offset][0]:
-                one_input_embed = torch.cat((inputs_embeds[i][:image_index_list[i - offset][1]], image_tensors_list[i - offset],
-                           inputs_embeds[i][image_index_list[i - offset][1] + 1:]), dim=0)
+            one_input_embed = []
+            if i == image_index_list[i - offset][0]:
+                one_input_embed = torch.cat(
+                    (inputs_embeds[i][:image_index_list[i - offset][1]], image_tensors_list[i - offset],
+                     inputs_embeds[i][image_index_list[i - offset][1] + 1:]), dim=0)
             else:
-                offset+=1
-                one_input_embed=input_ids[i]
+                offset += 1
+                one_input_embed = input_ids[i]
             new_input_embed.append(one_input_embed)
-        return torch.stack(new_input_embed,dim=0)
-
+        return torch.stack(new_input_embed, dim=0)
 
     def updata_input_embed(self, input_ids, inputs_embeds, batch_image_tensors, vision_tower):
-        image_tensors_list = [image_tensors[0] for image_tensors in batch_image_tensors]
+        image_tensors_list = batch_image_tensors#[image_tensors[0] for image_tensors in batch_image_tensors]
         use_im_start_end = vision_tower.config.use_im_start_end
         if use_im_start_end:
             image_start_id = vision_tower.config.im_start_token
@@ -265,7 +323,7 @@ class LlavaLlamaModel(nn.Module):
         img_embed_start_indexs, img_embed_end_indexs = get_image_embed_index(input_ids, use_im_start_end)
         for i in range(input_ids.shape[0]):
             inputs_embeds[i][img_embed_start_indexs[i]:img_embed_end_indexs[i] + 1, :] = \
-                batch_image_tensors[i][0]
+                batch_image_tensors[i]
 
         return inputs_embeds
 
@@ -403,7 +461,7 @@ class LlavaLlamaForCausalLM(nn.Module):
 
         if model_name_or_path is None:
             state_dict = dict(self.named_parameters())
-            device=None
+            device = None
             for name, weight in base_state_dict.items():
                 device = state_dict[name].device if device is None else device
                 state_dict[name].data.copy_(weight.to(device))
