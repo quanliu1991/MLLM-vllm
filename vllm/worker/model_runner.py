@@ -933,7 +933,8 @@ class MModelRunner(ModelRunner):
             self.prepare_input_tensors(seq_group_metadata_list, is_mllm=True))
 
         # Execute the model.
-        if input_metadata.use_cuda_graph:
+        # if input_metadata.use_cuda_graph:
+        if False:
             graph_batch_size = input_tokens.shape[0]
             model_executable = self.graph_runners[graph_batch_size]
         else:
@@ -948,10 +949,13 @@ class MModelRunner(ModelRunner):
         )
 
         # Sample the next token.
+        st=time.time()
         output = self.model.sample(
             hidden_states=hidden_states,
             sampling_metadata=sampling_metadata,
         )
+        et=time.time()
+        print("SLT:{}ms".format((et-st)*1000))
         return output
 
 

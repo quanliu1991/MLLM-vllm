@@ -259,9 +259,9 @@ class MLLM(LLM):
                     if use_tqdm:
                         pbar.update(1)
 
-        logger.warning("prompt_time:{}".format(prompt_time))
+        logger.warning("PLT:{}ms".format(prompt_time*1000))
         if len(decode_time)>0:
-            logger.warning("decode_time:{}".format(sum(decode_time)/len(decode_time)))
+            logger.warning("DLT:{}ms".format((sum(decode_time)/len(decode_time))*1000))
 
         if use_tqdm:
             pbar.close()
