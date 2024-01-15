@@ -167,7 +167,7 @@ class LlavaLlamaModel(nn.Module):
         #     input_ids = convert(input_ids.clone(), 32000, IMAGE_PATCH_ID)
 
         if inputs_embeds is None:
-            temp_input_ids = deepcopy(input_ids)
+            # temp_input_ids = deepcopy(input_ids)
             # try:
             #     image_index = torch.where(temp_input_ids == DEFAULT_IMAGE_PATCH_TOKEN)
             #     image_index_list=[]
@@ -176,7 +176,7 @@ class LlavaLlamaModel(nn.Module):
             #         temp_input_ids[image_index[0][i]][image_index[1][i]]=1
             # except:
             #     image_index=None
-            inputs_embeds = self.llama_model.embed_tokens(temp_input_ids)
+            inputs_embeds = self.llama_model.embed_tokens(input_ids)
 
         vision_tower = getattr(self, 'vision_tower', None)
 
