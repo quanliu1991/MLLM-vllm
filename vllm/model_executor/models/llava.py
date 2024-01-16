@@ -192,22 +192,40 @@ class LlavaLlamaModel(nn.Module):
         if vision_tower is not None and _is_have_image(batch_images):
             # TODO: this is a modified multimodal LLM -- Haotian Liu
             vision_tower = vision_tower[0]  # HACK: for FSDP
+            torch.cuda.synchronize()
             st = time.time()
             batch_image_tensors = self.get_image_features_with_batch(batch_images, vision_tower)
+            torch.cuda.synchronize()
             et = time.time()
             prompt =True
             print("IFLT_batch:{}ms".format((et - st)*1000))
 
+            torch.cuda.synchronize()
+            st = time.time()
+            batch_image_tensors = self.get_image_features(batch_images, vision_tower)
+            torch.cuda.synchronize()
+            et = time.time()
+            prompt =True
+            print("IFLT_batch:{}ms".format((et - st)*1000))
+
+            raise 0
             # updata input embed
+            torch.cuda.synchronize()
             st = time.time()
             inputs_embeds = self.updata_input_embed(input_ids, inputs_embeds, batch_image_tensors, vision_tower)
+            torch.cuda.synchronize()
             et = time.time()
             print("TIELT:{}ms".format((et - st) * 1000))
         else:
+            torch.cuda.synchronize()
             inputs_embeds = self.llama_model.embed_tokens(input_ids)
+            torch.cuda.synchronize()
+
+        torch.cuda.synchronize()
         st = time.time()
         hidden_states = self.llama_model(input_ids, positions, kv_caches,
                                          input_metadata, inputs_embeds=inputs_embeds)
+        torch.cuda.synchronize()
         et = time.time()
         if prompt:
             print("PSLT:{}ms".format((et - st) * 1000))
