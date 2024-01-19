@@ -28,7 +28,8 @@ class MLLMEngine(LLMEngine):
         prompt_token_ids: Optional[List[int]] = None,
         arrival_time: Optional[float] = None,
         conv: Optional[Conversation] = None,
-        choice: Optional[List[str]] = None
+        choice: Optional[List[str]] = None,
+        fixed_length: Tuple = (None, None)
     ) -> None:
         """Add a request to the engine's request pool.
 
@@ -53,6 +54,23 @@ class MLLMEngine(LLMEngine):
 
         prompt, prompt_token_ids = self._get_input_prompt(choice, conv, image, image_token_len, mm_use_im_start_end,
                                                           prompt, prompt_token_ids)
+
+        input_tokens_number, output_tokens_number = fixed_length
+        if input_tokens_number is not None:
+            assert not (image is not None and input_tokens_number < image_token_len+50),\
+                f"please input tokens lenght , at least more than {image_token_len+50}"
+
+            origin_input_token_len = len(prompt_token_ids)
+            if input_tokens_number < origin_input_token_len:
+                prompt_token_ids=prompt_token_ids[:input_tokens_number]
+            else:
+                prompt_token_ids.extend([prompt_token_ids[-2]]*(input_tokens_number-origin_input_token_len))
+            logger.warning(f"profromance banchmark input tokens {origin_input_token_len} -> {len(prompt_token_ids)}")
+            sampling_params.stop=[]
+            assert not(output_tokens_number is None), f"please input output_tokens_number"
+            sampling_params.ignore_eos=True
+            sampling_params.max_tokens=output_tokens_number
+
 
         image_data = image
 

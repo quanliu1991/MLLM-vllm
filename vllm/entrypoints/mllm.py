@@ -5,7 +5,7 @@ from io import BytesIO
 import aiohttp
 from linker_atom.lib.load_image import mmap_to_pil
 from PIL import Image
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Tuple
 import asyncio
 from tqdm import tqdm
 
@@ -85,6 +85,7 @@ class MLLM(LLM):
             prompt_token_ids: Optional[List[List[int]]] = None,
             use_tqdm: bool = False,
             initial_prompt: Optional[str] = None,
+            fixed_length: Tuple = (None, None)
     ) -> List[RequestOutput]:
         """Generates the completions for the input prompts.
 
@@ -159,7 +160,7 @@ class MLLM(LLM):
             token_ids = prompt_token_ids[i] if prompt_token_ids is not None else None
             image = image_datas[i]
             choice = choices[i]
-            self._add_request(prompt, sampling_params, token_ids, image, conv, choice)
+            self._add_request(prompt, sampling_params, token_ids, image, conv, choice, fixed_length)
         et = time.time()
         logger.warning("_add_request:{}".format(et - st))
         st = time.time()
@@ -222,7 +223,8 @@ class MLLM(LLM):
             prompt_token_ids: Optional[List[int]],
             image: Optional[dict] = None,
             conv: Optional[Conversation] = None,
-            choice: Optional[List[str]] = None
+            choice: Optional[List[str]] = None,
+            fixed_length: Tuple = (None, None)
     ) -> None:
         request_id = str(next(self.request_counter))
 
@@ -233,7 +235,8 @@ class MLLM(LLM):
             sampling_params=sampling_params,
             prompt_token_ids=prompt_token_ids,
             conv=conv,
-            choice=choice
+            choice=choice,
+            fixed_length=fixed_length
         )
 
     def _run_engine(self, use_tqdm: bool) -> List[RequestOutput]:

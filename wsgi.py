@@ -57,6 +57,29 @@ async def detect_urls(request: Request, body: BatchQueryBody) -> BatchResponse:
     resp = BatchResponse(took=(time.time() - s_time) * 1000, code=200, answer=res)
     return resp
 
+
+@router.post("/v1/process/profromance_banchmark", response_model=BatchResponse, name="batch_infer")
+async def detect_urls(request: Request, body: BatchQueryBody) -> BatchResponse:
+    s_time = time.time()
+    engine: Engine = request.app.state.detector
+    fixed_length = (body.input_tokens_number,body.output_tokens_number)
+    try:
+        res = await engine.profromance_banchmark(
+            model_id=body.model_id,
+            prompts=body.prompts,
+            initial_prompt=body.initial_prompt,
+            temperature=body.temperature,
+            max_tokens=body.max_tokens,
+            top_p=body.top_p,
+            fixed_length=fixed_length
+        )
+    except Exception as error:
+        logger.error(traceback.format_exc())
+        resp = Response(took=(time.time() - s_time) * 1000, code=500, error=error)
+        return resp
+    resp = BatchResponse(took=(time.time() - s_time) * 1000, code=200, answer=res)
+    return resp
+
 app.include_router(
     router=router,
     prefix=settings.atom_api_prefix

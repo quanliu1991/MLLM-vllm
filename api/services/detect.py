@@ -194,6 +194,64 @@ class Engine:
         logger.info(generated_texts)
         return generated_texts
 
+    async def profromance_banchmark(
+            self,
+            model_id,
+            prompts,
+            initial_prompt,
+            temperature=1,
+            max_tokens=1024,
+            top_p=1,
+            fixed_length=(None,None)
+    ):
+        st = time.time()
+        model = self.load_model(model_id)
+        et = time.time()
+        logger.warning("self.load_model(model_id):{}".format(et - st))
+        sampling_params = SamplingParams(
+            temperature=temperature, max_tokens=max_tokens, top_p=top_p, stop=["<|im_end|>"], presence_penalty=1,
+            frequency_penalty=1
+        )
+        images = []
+        texts = []
+        choices = []
+        st = time.time()
+        for item in prompts:
+            images.append({"src_type": item.src_type, "image_src": item.image} if item.image is not None else None)
+            texts.append(item.dict()['records'])
+            choices.append(item.dict()['choices'])
+        et = time.time()
+        logger.warning("for item in prompts:{}".format(et - st))
+
+
+        res = await model.generate(
+            prompts=texts,
+            images=images,
+            choices=choices,
+            sampling_params=sampling_params,
+            initial_prompt=initial_prompt,
+            fixed_length=fixed_length
+        )
+        generated_texts = []
+        for output in res:
+            text = output.outputs[0].text
+            input_tokens = len(output.prompt_token_ids)
+            output_tokens = len(output.outputs[0].token_ids)
+            mean_prob = None
+            probs = {}
+            # total_prob = math.exp(output.outputs[0].cumulative_logprob)
+            # mean_prob = total_prob**(1/output_tokens)
+            # probs={}
+            # for name, logprob in output.outputs[0].logprobs:
+            #     probs[name] = torch.exp_(torch.tensor(logprob,dtype=torch.float)).item()
+            generated_texts.append(
+                Answer(content=text, input_tokens=input_tokens, output_tokens=output_tokens, mean_prob=mean_prob,
+                       probs=probs))
+        logger.info(texts)
+        logger.info(generated_texts)
+        return generated_texts
+
+
 
 if __name__ == "__main__":
     e = Engine()
