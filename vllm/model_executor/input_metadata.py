@@ -18,6 +18,9 @@ class InputMetadata:
         self,
         is_prompt: bool,
         slot_mapping: torch.Tensor,
+        prompt_lens: Optional[torch.Tensor],
+        max_seq_len: Optional[int],
+        start_loc: Optional[torch.Tensor],
         max_context_len: Optional[int],
         context_lens: Optional[torch.Tensor],
         block_tables: Optional[torch.Tensor],
@@ -25,6 +28,9 @@ class InputMetadata:
         choice_token_ids: Optional[torch.Tensor] = None,
     ) -> None:
         self.is_prompt = is_prompt
+        self.prompt_lens = prompt_lens
+        self.max_seq_len = max_seq_len
+        self.start_loc = start_loc
         self.max_context_len = max_context_len
         self.slot_mapping = slot_mapping
         self.context_lens = context_lens
