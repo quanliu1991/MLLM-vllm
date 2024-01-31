@@ -846,7 +846,7 @@ class MModelRunner(ModelRunner):
                     "Prefix caching is currently not supported with "
                     "sliding window attention")
                 start_idx = max(0, prompt_len - self.sliding_window)
-            for i in range(prompt_len):
+            for i in range(prefix_len, prompt_len):
                 if i < start_idx:
                     slot_mapping[-1].append(_PAD_SLOT_ID)
                     continue
@@ -944,6 +944,8 @@ class MModelRunner(ModelRunner):
 
 
 def _pad_to_max(x: List[int], max_len: int, pad: int) -> List[int]:
+    if len(x) > max_len:
+        print(len(x))
     assert len(x) <= max_len
     return x + [pad] * (max_len - len(x))
 

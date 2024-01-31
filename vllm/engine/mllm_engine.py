@@ -26,6 +26,7 @@ class MLLMEngine(LLMEngine):
         image: Optional[dict] = None,
         sampling_params: SamplingParams = None,
         prompt_token_ids: Optional[List[int]] = None,
+        prefix_pos: Optional[int] = None,
         arrival_time: Optional[float] = None,
         conv: Optional[Conversation] = None,
         choice: Optional[List[str]] = None,
@@ -44,6 +45,11 @@ class MLLMEngine(LLMEngine):
             sampling_params: The sampling parameters for text generation.
             prompt_token_ids: The token IDs of the prompt. If None, we
                 use the tokenizer to convert the prompts to token IDs.
+            prefix_pos: If not None, we use the given position as the prefix
+                position for each prompt. We will cache the prefix's KV
+                cache and reuse it for the next request with the same prefix.
+                This is an experimental feature, and may be replaced with
+                automatic prefix caching in the future.
             arrival_time: The arrival time of the request. If None, we use
                 the current time.
         """
@@ -84,10 +90,12 @@ class MLLMEngine(LLMEngine):
             seq = Sequence(seq_id, prompt, prompt_token_ids, block_size, image_data=image_data,
                            choice_token_ids=choice_token_ids)
             seqs.append(seq)
+        prefix = self.scheduler.prefix_pool.add_or_get_prefix(
+            prompt_token_ids[:prefix_pos]) if prefix_pos is not None else None
 
         # Create the sequence group.
         seq_group = SequenceGroup(request_id, seqs, sampling_params,
-                                  arrival_time)
+                                  arrival_time, prefix)
 
         # Add the sequence group to the scheduler.
         self.scheduler.add_seq_group(seq_group)

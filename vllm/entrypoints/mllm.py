@@ -83,6 +83,7 @@ class MLLM(LLM):
             choices: Optional[List[List[str]]] = None,
             sampling_params: Optional[SamplingParams] = None,
             prompt_token_ids: Optional[List[List[int]]] = None,
+            prefix_pos: Optional[Union[int, List[int]]] = None,
             use_tqdm: bool = False,
             initial_prompt: Optional[str] = None,
             fixed_length: Tuple = (None, None)
@@ -101,6 +102,11 @@ class MLLM(LLM):
                 None, we use the default sampling parameters.
             prompt_token_ids: A list of token IDs for the prompts. If None, we
                 use the tokenizer to convert the prompts to token IDs.
+            prefix_pos: If not None, we use the given position as the prefix
+                position for each prompt. We will cache the prefix's KV
+                cache and reuse it for the next request with the same prefix.
+                This is an experimental feature, and may be replaced with
+                automatic prefix caching in the future.
             use_tqdm: Whether to use tqdm to display the progress bar.
             initial_prompt: The prompt that will be use in the gen by default.
 
@@ -157,10 +163,11 @@ class MLLM(LLM):
         for i in range(num_requests):
             conv = conv_template.copy()
             prompt = prompts[i] if prompts is not None else None
+            prefix_pos_i = prefix_pos[i] if prefix_pos is not None else None
             token_ids = prompt_token_ids[i] if prompt_token_ids is not None else None
             image = image_datas[i]
             choice = choices[i]
-            self._add_request(prompt, sampling_params, token_ids, image, conv, choice, fixed_length)
+            self._add_request(prompt, sampling_params, token_ids, image, prefix_pos_i, conv, choice, fixed_length)
         et = time.time()
         logger.warning("_add_request:{}".format(et - st))
         st = time.time()
@@ -222,6 +229,7 @@ class MLLM(LLM):
             sampling_params: SamplingParams,
             prompt_token_ids: Optional[List[int]],
             image: Optional[dict] = None,
+            prefix_pos: Optional[int] = None,
             conv: Optional[Conversation] = None,
             choice: Optional[List[str]] = None,
             fixed_length: Tuple = (None, None)
@@ -234,6 +242,7 @@ class MLLM(LLM):
             image=image,
             sampling_params=sampling_params,
             prompt_token_ids=prompt_token_ids,
+            prefix_pos=prefix_pos,
             conv=conv,
             choice=choice,
             fixed_length=fixed_length
