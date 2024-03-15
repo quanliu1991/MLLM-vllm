@@ -57,7 +57,6 @@ class MLLMEngine(LLMEngine):
             arrival_time = time.time()
 
         image_token_len, mm_use_im_start_end = self._get_image_config()
-
         prompt, prompt_token_ids = self._get_input_prompt(choice, conv, image, image_token_len, mm_use_im_start_end,
                                                           prompt, prompt_token_ids)
 
@@ -208,7 +207,6 @@ class MLLMEngine(LLMEngine):
     ):
         if history is None:
             history = []
-
         im_start, im_end = "<|im_start|>", "<|im_end|>"
         im_start_tokens = [151644]
         im_end_tokens = [151645]
@@ -232,7 +230,8 @@ class MLLMEngine(LLMEngine):
         raw_text = ""
         context_tokens = []
 
-        for turn_query, turn_response in reversed(history):
+        for turn in reversed(history):
+            turn_query, turn_response = turn.values()
             query_text, query_tokens_part = _tokenize_str("user", turn_query)
             query_tokens = im_start_tokens + query_tokens_part + im_end_tokens
             response_text, response_tokens_part = _tokenize_str(
@@ -251,10 +250,8 @@ class MLLMEngine(LLMEngine):
                 raw_text = prev_chat + raw_text
             else:
                 break
-
         context_tokens = system_tokens + context_tokens
         raw_text = f"{im_start}{system_text}{im_end}" + raw_text
-
         if choice:
             choice_postfix = os.getenv("CHOICE_POSTFIX", "请选择正确的答案。")
             query += "\n" + choice_style(choice, choice_postfix)
@@ -270,7 +267,6 @@ class MLLMEngine(LLMEngine):
                 + nl_tokens
         )
         raw_text += f"\n{im_start}user\n{query}{im_end}\n{im_start}assistant\n"
-
         return raw_text, context_tokens
 
     def _add_image_token(self, prompt, mm_use_im_start_end, image_token_len):
