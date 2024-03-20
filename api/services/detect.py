@@ -1,6 +1,8 @@
 import copy
 import json
 import os
+import uuid
+
 import torch
 import time
 
@@ -103,27 +105,32 @@ class Engine:
         self.model.put(model_id, base_model[0])
         return base_model[0]
 
-    def _load_base_model(self, base_model_id):
+    def _load_base_model(self, base_model_id, out_path="/tmp"):
         if self.base_model.has(base_model_id):
             return self.base_model.get(base_model_id)
         if dectypt:
+            self.base_model_path = os.path.join(out_path, str(uuid.uuid4()))
+
+            if not os.path.exists(self.base_model_path):
+                os.makedirs(self.base_model_path)
+
             status = os.system(
                 "openssl aes-256-cbc -d -salt -k HZlh@2023 -in {}/{}.tar.gz | tar -xz -C {}/".format(
                     self.resources_prefix,
-                    base_model_id, self.resources_prefix))
+                    base_model_id, self.base_model_path))
             if status != 0:
                 raise RuntimeError("unzip failed, error code is {}. please connect engineer".format(status))
         base_model = self.base_model.get_last_model()
         if base_model:
             model = base_model.mllm_engine.driver_worker.model_runner.model
 
-            model.load_weights(model_name_or_path="{}/{}".format(self.resources_prefix, base_model_id)
+            model.load_weights(model_name_or_path="{}/{}".format(self.base_model_path, base_model_id)
                                )
             model.cuda()
         else:
             base_model = MLLM(
-                model="{}/{}".format(self.resources_prefix, base_model_id),
-                tokenizer="{}/{}".format(self.resources_prefix, base_model_id),
+                model="{}/{}".format(self.base_model_path, base_model_id),
+                tokenizer="{}/{}".format(self.base_model_path, base_model_id),
                 gpu_memory_utilization=EnvVar.GPU_MEMORY_UTILIZATION,
                 dtype="float16",
                 lora_weight_id="{}/{}".format(self.addapter_resources_prefix, self.model_id),
@@ -137,7 +144,7 @@ class Engine:
         self.base_model.put(base_model_id, (base_model, base_state_dict))
         del base_model
         if dectypt:
-            os.system("rm -rf {}/{}".format(self.resources_prefix, base_model_id))
+            os.system("rm -rf {}".format(self.base_model_path))
         return self.base_model.get(base_model_id)
 
     async def batch_predict(
@@ -172,6 +179,7 @@ class Engine:
             prompts=texts,
             images=images,
             choices=choices,
+            prefix_pos=None,
             sampling_params=sampling_params,
             initial_prompt=initial_prompt,
         )
@@ -228,6 +236,7 @@ class Engine:
             prompts=texts,
             images=images,
             choices=choices,
+            prefix_pos=[200]*len(texts),
             sampling_params=sampling_params,
             initial_prompt=initial_prompt,
             fixed_length=fixed_length
