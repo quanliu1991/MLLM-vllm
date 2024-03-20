@@ -1,0 +1,31 @@
+FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
+RUN apt-get update -y \
+    && apt-get install -y python3-pip
+WORKDIR /app
+
+RUN rm -rf /etc/localtime
+RUN mkdir -p /usr/share/zoneinfo/Asia
+    COPY Shanghai /usr/share/zoneinfo/Asia/
+RUN echo "Asia/Shanghai" > /etc/timezone
+RUN ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+
+RUN apt install ffmpeg libsm6 libxext6 libglib2.0-0 vim wget unzip -y
+RUN pip3 install linker-atom -U -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+#RUN pip3 install pyarmor==7.7.2
+#RUN wget https://airesources.oss-cn-hangzhou.aliyuncs.com/zl/pyarmor.zip
+#RUN mv pyarmor.zip /root/
+#RUN unzip /root/pyarmor.zip -d /root
+
+#RUN pip3 install ninja -i https://pypi.tuna.tsinghua.edu.cn/simple
+#RUN mkdir source/
+#COPY . ./source/
+COPY . .
+RUN pip3 install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+#RUN pyarmor obfuscate --obf-code 0 --src="./source" -r --output=./ wsgi.py
+#RUN rm -rf source /root/pyarmor.zip /root/.pyarmor Dockerfile.deploy
+#fix Failed to import transformers.models.clip.modeling_clip error
+RUN pip3 uninstall transformer-engine -y
+RUN bash pyarmor.sh
+CMD ["python3", "wsgi.py"]
